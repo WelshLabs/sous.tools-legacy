@@ -33,9 +33,11 @@ export class SupabaseAuthGuard implements CanActivate {
       return true;
     }
 
+    // Try to get the HTTP request for GraphQL or standard HTTP contexts.
+    const gqlCtx = GqlExecutionContext.create(context).getContext?.();
     const request =
       (context.getType() as string) === "graphql"
-        ? GqlExecutionContext.create(context).getContext()?.req
+        ? (gqlCtx?.req || gqlCtx)
         : context.switchToHttp().getRequest();
 
     if (!request) {
@@ -44,12 +46,30 @@ export class SupabaseAuthGuard implements CanActivate {
 
     let token: string | undefined;
 
+    // 1) Standard Authorization header on HTTP requests
     const authHeader = request.headers?.authorization as string | undefined;
     if (authHeader?.startsWith("Bearer ")) {
       token = authHeader.split(" ")[1];
-    } else if (request.cookies?.[COOKIE_NAME]) {
+    }
+
+    // 2) GraphQL websocket connectionParams may provide headers or auth object
+    if (!token && gqlCtx) {
+      const connParams = (gqlCtx.connectionParams as any) || gqlCtx.connection || gqlCtx.extra;
+      const cpHeaders = connParams?.headers || connParams?.authorization || connParams;
+      const cpAuthToken =
+        (cpHeaders?.Authorization || cpHeaders?.authorization || cpHeaders?.auth?.token) as
+          | string
+          | undefined;
+      if (cpAuthToken) {
+        if (cpAuthToken.startsWith("Bearer ")) token = cpAuthToken.split(" ")[1];
+        else token = cpAuthToken;
+      }
+    }
+
+    // 3) Cookie-based token (HTTP cookies or passed cookie header string)
+    if (!token && request.cookies?.[COOKIE_NAME]) {
       token = request.cookies[COOKIE_NAME] as string;
-    } else if (typeof request.headers?.cookie === "string") {
+    } else if (!token && typeof request.headers?.cookie === "string") {
       const match = request.headers.cookie.match(
         new RegExp(`(?:^|;\\s*)${COOKIE_NAME}=([^;]+)`),
       );
@@ -74,11 +94,28 @@ export class SupabaseAuthGuard implements CanActivate {
 
     request.user = user;
 
-    const orgId =
+    let orgId =
       user.user_metadata?.organization_id ||
+      user.app_metadata?.organization_id ||
       request.headers?.["x-org-id"] ||
       request.headers?.["x-organization-id"] ||
       request.query?.orgId;
+
+    if (!orgId && user.id) {
+      const { data: member } = await client
+        .from("org_members")
+        .select("organization_id")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (member?.organization_id) {
+        orgId = member.organization_id;
+        user.user_metadata = user.user_metadata || {};
+        user.user_metadata.organization_id = orgId;
+      }
+    }
 
     if (orgId && this.cls) {
       this.cls.set("orgId", orgId);

@@ -3,7 +3,7 @@
 -- Phase III: Dtown Cafe Identity & Data Seeding
 -- Deterministic UUIDs for local dev. Re-run safe via ON CONFLICT guards.
 -- =============================================================================
-INSERT INTO app_settings (key, value) VALUES ('neo4j_sync_url', 'http://api.sous.tools/webhooks/neo4j-sync') 
+INSERT INTO app_settings (key, value) VALUES ('neo4j_sync_url', 'http://host.docker.internal:3001/webhooks/neo4j-sync') 
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 
 -- ---------------------------------------------------------------------------

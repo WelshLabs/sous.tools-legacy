@@ -11,8 +11,20 @@ import {
   X,
   Plus,
 } from "lucide-react";
-import { api } from "@soustools/api-client";
+import { api, graphqlClient } from "@soustools/api-client";
 import { type UnifiedLineItem } from "./UnifiedReviewPanel";
+
+const CREATE_ITEM_MUTATION = `
+  mutation CreateItem($input: CreateItemInputGQL!) {
+    createItem(input: $input) {
+      id
+      organization_id
+      name
+      category
+      purchase_unit
+    }
+  }
+`;
 
 export interface UnifiedItemRowProps {
   item: UnifiedLineItem;
@@ -359,24 +371,26 @@ export function UnifiedItemRow({
   const handleCreate = async (name: string) => {
     setIsCreating(true);
     try {
-      const { data, error } = await api.POST("/items", {
-        body: {
-          name,
-          category: item.category || "INGREDIENT",
-          purchase_unit: item.unit || "EACH",
-          units_per_case: 1,
+      const res = await graphqlClient.request<{ createItem: any }>(
+        CREATE_ITEM_MUTATION,
+        {
+          input: {
+            name,
+            category: item.category || "INGREDIENT",
+            purchase_unit: item.unit || "EACH",
+            units_per_case: 1,
+          },
         },
-      });
-      if (error) throw new Error(String(error));
-      if (data?.data) {
-        const created = data.data as { id: string; name: string };
+      );
+      if (res.data?.createItem) {
+        const created = res.data.createItem as { id: string; name: string };
         onItemCreated?.(created);
         onUpdateItem?.(index, { itemId: created.id, confidence: 1.0 });
         onConfirmAlias?.(item.rawName, created.id); // save alias immediately
         closeOverride();
       }
     } catch (err) {
-      console.error(err);
+      console.error("Failed to create item via GraphQL:", err);
     } finally {
       setIsCreating(false);
     }

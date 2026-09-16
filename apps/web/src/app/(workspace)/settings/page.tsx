@@ -1,5 +1,5 @@
 import { SettingsPanelContainer } from "@soustools/domain-settings";
-import { api } from "@soustools/api-client";
+import { graphqlClient } from "@soustools/api-client";
 import { serverConfig } from "@soustools/config/server";
 
 export const dynamic = "force-dynamic";
@@ -7,11 +7,19 @@ export const dynamic = "force-dynamic";
 export default async function SettingsPage() {
   let integrations = [];
   try {
-    const { data, error } = await (api.GET as any)("/integrations/status", {
-      cache: "no-store",
-    });
-    if (!error && data) {
-      integrations = (data as any).data || [];
+    const { data } = await graphqlClient.request<{
+      integrationStatuses: any[];
+    }>(`
+      query GetIntegrationStatuses {
+        integrationStatuses {
+          provider
+          connected
+          connectedAs
+        }
+      }
+    `);
+    if (data?.integrationStatuses) {
+      integrations = data.integrationStatuses;
     }
   } catch (err) {
     console.error("Failed to load integrations status", err);

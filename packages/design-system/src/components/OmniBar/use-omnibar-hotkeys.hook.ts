@@ -34,7 +34,7 @@ export function useOmniBarHotkeys({
     setInputText,
     setIsProcessing,
     setIsOpen,
-    chatHistory,
+    addMessage,
     setChatHistory,
     contextPayload,
     stagedFiles,
@@ -111,8 +111,7 @@ export function useOmniBarHotkeys({
       attachments,
     };
 
-    const updatedHistory = [...chatHistory, newUserMessage];
-    setChatHistory(updatedHistory);
+    addMessage(newUserMessage);
 
     try {
       const res = await graphqlClient.request<{ executeOmniCommand: any }>(
@@ -130,15 +129,12 @@ export function useOmniBarHotkeys({
 
       if (res.data?.executeOmniCommand) {
         const step = res.data.executeOmniCommand;
-        setChatHistory([
-          ...updatedHistory,
-          {
-            id: step.id,
-            role: step.role as OmniMessage["role"],
-            content: step.content,
-            timestamp: new Date(step.timestamp),
-          },
-        ]);
+        addMessage({
+          id: step.id,
+          role: step.role as OmniMessage["role"],
+          content: step.content,
+          timestamp: new Date(step.timestamp),
+        });
       }
     } catch (err: unknown) {
       console.error("Failed to execute command via GraphQL:", err);

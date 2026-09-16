@@ -47,6 +47,7 @@ export function ConversationHistoryContainer({
     graphqlClient
       .request<{ conversations: any[] }>(GET_CONVERSATIONS_QUERY)
       .then((res) => {
+        console.log(res);
         const raw = res.data?.conversations || [];
         const mapped: ConversationItem[] = raw.map((c: any) => ({
           id: c.id,

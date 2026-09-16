@@ -1,7 +1,7 @@
 /* eslint-disable max-lines */
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { ReviewProseBlock } from "./ReviewProseBlock";
 import { ReviewInvoiceBlock } from "./ReviewInvoiceBlock";
@@ -39,6 +39,7 @@ const GET_INGESTION_REVIEW_QUERY = `
   query GetIngestionReview($id: String!) {
     ingestionReview(id: $id) {
       id
+      status
       source
       source_name
       source_document_url
@@ -53,6 +54,7 @@ const UPDATE_INGESTION_REVIEW_MUTATION = `
   mutation UpdateIngestionReview($id: String!, $parsedData: JSON!) {
     updateIngestionReviewRecord(id: $id, parsedData: $parsedData) {
       id
+      status
       parsed_data
     }
   }
@@ -73,9 +75,22 @@ export function UniversalReviewComponent({
   const [activeReviewId, setActiveReviewId] = useState<string | undefined>(
     reviewId,
   );
-  const [payload, setPayload] = useState<any>(initialPayload || null);
+  const [reviewStatus, setReviewStatus] = useState<string | null>(null);
+  const [payload, setPayload] = useState<any>(() => {
+    if (
+      initialPayload &&
+      !initialPayload.processing &&
+      Array.isArray(initialPayload.pages) &&
+      initialPayload.pages.length > 0
+    ) {
+      return initialPayload;
+    }
+    return null;
+  });
   const [isLoading, setIsLoading] = useState<boolean>(!initialPayload);
-  const [isProcessing, setIsProcessingState] = useState<boolean>(false);
+  const [isProcessing, setIsProcessingState] = useState<boolean>(
+    Boolean(initialPayload?.processing),
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [committedRecipeId, setCommittedRecipeId] = useState<string | null>(
@@ -85,8 +100,28 @@ export function UniversalReviewComponent({
 
   const { chatHistory, socket } = useOmnibarContext();
 
+  const isSavedState =
+    reviewStatus === "APPROVED" ||
+    reviewStatus === "COMMITTED" ||
+    reviewStatus === "SAVED";
+
+  useEffect(() => {
+    if (initialPayload && !payload && !activeReviewId) {
+      if (initialPayload.processing) {
+        setIsProcessingState(true);
+      } else if (
+        Array.isArray(initialPayload.pages) &&
+        initialPayload.pages.length > 0
+      ) {
+        setPayload(initialPayload);
+        setIsProcessingState(false);
+        setIsLoading(false);
+      }
+    }
+  }, [initialPayload, payload, activeReviewId]);
+
   const fetchReview = useCallback(async () => {
-    const targetId = activeReviewId || "latest";
+    const targetId = activeReviewId || reviewId || "latest";
     setIsLoading(true);
     try {
       const res = await graphqlClient.request<{ ingestionReview: any }>(
@@ -96,14 +131,17 @@ export function UniversalReviewComponent({
       const record = res.data?.ingestionReview;
       if (record && record.id) {
         setActiveReviewId(record.id);
+        if (record.status) {
+          setReviewStatus(record.status);
+        }
         const pages = record.parsed_data?.pages;
         const hasParsedPages = Array.isArray(pages) && pages.length > 0;
-        if (record.parsed_data?.processing || !hasParsedPages) {
+        if (record.parsed_data?.processing) {
           setIsProcessingState(true);
           setPayload(null);
-        } else {
+        } else if (hasParsedPages) {
           setIsProcessingState(false);
-          setPayload(record.parsed_data || null);
+          setPayload(record.parsed_data);
         }
       }
     } catch (err) {
@@ -114,7 +152,7 @@ export function UniversalReviewComponent({
     } finally {
       setIsLoading(false);
     }
-  }, [activeReviewId]);
+  }, [activeReviewId, reviewId]);
 
   useEffect(() => {
     if (reviewId && reviewId !== activeReviewId) {
@@ -164,20 +202,29 @@ export function UniversalReviewComponent({
     return () => clearInterval(interval);
   }, [isProcessing, fetchReview]);
 
+  const isSubmittingRef = useRef(false);
+  const persistTimerRef = useRef<NodeJS.Timeout | null>(null);
+
   const persistPayloadToBackend = useCallback(
-    async (newPayload: any) => {
-      if (!activeReviewId) return;
-      try {
-        await graphqlClient.request(UPDATE_INGESTION_REVIEW_MUTATION, {
-          id: activeReviewId,
-          parsedData: newPayload,
-        });
-      } catch (err) {
-        console.error(
-          "Failed to persist updated review payload to GraphQL:",
-          err,
-        );
+    (newPayload: any) => {
+      if (!activeReviewId || isSubmittingRef.current) return;
+      if (persistTimerRef.current) {
+        clearTimeout(persistTimerRef.current);
       }
+      persistTimerRef.current = setTimeout(async () => {
+        if (isSubmittingRef.current) return;
+        try {
+          await graphqlClient.request(UPDATE_INGESTION_REVIEW_MUTATION, {
+            id: activeReviewId,
+            parsedData: newPayload,
+          });
+        } catch (err) {
+          console.error(
+            "Failed to persist updated review payload to GraphQL:",
+            err,
+          );
+        }
+      }, 400);
     },
     [activeReviewId],
   );
@@ -198,6 +245,18 @@ export function UniversalReviewComponent({
       setStatusMessage(
         `Navigated to page ${action.pageNumber} via Omnibar command.`,
       );
+    } else if (action.action === "OPEN_REVIEW") {
+      // Open the review panel and populate it with parsed data if provided
+      if (action.reviewId) setActiveReviewId(action.reviewId);
+      if (action.parsedData) {
+        setPayload(action.parsedData);
+        setIsProcessingState(false);
+        setIsLoading(false);
+      } else if (action.reviewId) {
+        // fallback: fetch review record from backend
+        setIsProcessingState(true);
+        fetchReview();
+      }
     } else if (
       action.action === "ACCEPT_ALL_PAGE" ||
       action.action === "ACCEPT_ALL"
@@ -245,10 +304,12 @@ export function UniversalReviewComponent({
     }
   }, [chatHistory, currentPage, persistPayloadToBackend]);
 
-  const pages = payload?.pages || [];
+  const pages = Array.isArray(payload?.pages) ? payload.pages : [];
   const totalPages = Math.max(pages.length, 1);
   const currentPData =
-    pages.find((p: any) => p.pageNumber === currentPage) || pages[0];
+    (pages || []).find((p: any) => p && p.pageNumber === currentPage) ||
+    pages[0] ||
+    null;
 
   const handleUpdateBlock = (blockId: string, updatedFields: any) => {
     setPayload((prev: any) => {
@@ -291,6 +352,10 @@ export function UniversalReviewComponent({
 
   const handleCommit = async () => {
     if (!activeReviewId) return;
+    if (persistTimerRef.current) {
+      clearTimeout(persistTimerRef.current);
+    }
+    isSubmittingRef.current = true;
     setIsSubmitting(true);
     try {
       const res = await graphqlClient.request<{ commitIngestionReview: any }>(
@@ -305,12 +370,18 @@ export function UniversalReviewComponent({
       if (rId) {
         setCommittedRecipeId(rId);
       }
-      setStatusMessage("Recipe and items saved successfully!");
+      setReviewStatus("APPROVED");
+      setStatusMessage("Saved successfully to inventory & recipes!");
       onCommitSuccess?.();
     } catch (err: any) {
       console.error("Commit failed:", err);
-      setStatusMessage("Saved review state.");
+      setStatusMessage(
+        err?.message
+          ? `Save failed: ${err.message}`
+          : "Failed to save recipe. Please try again.",
+      );
     } finally {
+      isSubmittingRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -363,25 +434,22 @@ export function UniversalReviewComponent({
               initial={{ scale: 0.88, opacity: 0, y: 24 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.88, opacity: 0, y: 24 }}
-              transition={{ type: "spring", stiffness: 320, damping: 28 }}
-              className="relative max-h-[92vh] max-w-5xl overflow-hidden rounded-2xl border border-zinc-700 bg-zinc-950 shadow-2xl"
+              className="relative max-h-[90vh] max-w-[90vw] overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900 p-2 shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
               <button
                 type="button"
-                aria-label="Close image preview"
                 onClick={() => setImageModalOpen(false)}
-                className="absolute top-3 right-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-zinc-800/80 text-zinc-300 transition-colors hover:bg-zinc-700 hover:text-white"
+                className="absolute top-4 right-4 z-10 rounded-full bg-zinc-800/80 p-2 text-zinc-300 transition hover:bg-zinc-700 hover:text-white"
+                aria-label="Close full size image"
               >
-                <X className="h-4 w-4" />
+                <X className="h-5 w-5" />
               </button>
-              <div className="relative">
-                <img
-                  src={currentPData.imageUrl}
-                  alt={`Document page ${currentPage}`}
-                  className="block max-h-[88vh] w-auto object-contain"
-                />
-              </div>
+              <img
+                src={currentPData.imageUrl}
+                alt={`Page ${currentPage} source`}
+                className="max-h-[85vh] max-w-[85vw] rounded object-contain"
+              />
             </motion.div>
           </motion.div>
         )}
@@ -407,6 +475,12 @@ export function UniversalReviewComponent({
             <CardTitle className="flex items-center gap-2 text-base font-bold text-white">
               <ChefHat className="text-primary h-4 w-4 shrink-0" />
               <span>Ingestion Review</span>
+              {isSavedState && (
+                <span className="flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-400">
+                  <CheckCircle2 className="h-3 w-3" />
+                  Saved
+                </span>
+              )}
             </CardTitle>
           </div>
 
@@ -457,6 +531,16 @@ export function UniversalReviewComponent({
         </CardHeader>
 
         <CardContent className="flex flex-col gap-0 divide-y divide-zinc-800/50 p-0">
+          {isSavedState && !statusMessage && (
+            <div className="flex items-center gap-2 border-b border-emerald-500/20 bg-emerald-500/10 px-5 py-2.5 text-xs text-emerald-300">
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
+              <span>
+                This ingestion has been saved to inventory &amp; recipes. You can
+                continue modifying mappings and re-save anytime.
+              </span>
+            </div>
+          )}
+
           {statusMessage && (
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-500/20 bg-emerald-500/10 px-5 py-3 text-xs text-emerald-300">
               <div className="flex items-center gap-2">

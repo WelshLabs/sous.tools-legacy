@@ -99,7 +99,11 @@ export class GraphQLClient {
           const nextHeaders = await import("next/headers");
           if (typeof nextHeaders.cookies === "function") {
             const cookieStore = await nextHeaders.cookies();
-            const cookieString = cookieStore.toString();
+            const cookieString = cookieStore
+              .getAll()
+              .map((c: any) => `${c.name}=${c.value}`)
+              .join("; ");
+            
             if (cookieString) {
               dynamicHeaders["Cookie"] = cookieString;
               const token = cookieStore.get("sb-access-token")?.value;
@@ -129,8 +133,10 @@ export class GraphQLClient {
 
     let response = await fetchQuery();
     if (response.status === 401) {
-      const refreshed = await refreshAuthSession();
-      if (refreshed) response = await fetchQuery();
+      if (typeof window !== "undefined") {
+        const refreshed = await refreshAuthSession();
+        if (refreshed) response = await fetchQuery();
+      }
     }
     if (!response.ok) {
       throw new Error(
@@ -144,7 +150,7 @@ export class GraphQLClient {
         e.message?.toLowerCase().includes("unauthorized") ||
         e.extensions?.code === "UNAUTHENTICATED",
     );
-    if (hasAuthError) {
+    if (hasAuthError && typeof window !== "undefined") {
       const refreshed = await refreshAuthSession();
       if (refreshed) {
         const retryRes = await fetchQuery();

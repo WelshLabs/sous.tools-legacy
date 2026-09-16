@@ -88,36 +88,67 @@ export function mapRecipeRow(row: Record<string, unknown>): Recipe {
             }
           : undefined;
 
+        const masterId = ri.item_id
+          ? String(ri.item_id)
+          : ri.master_item_id
+            ? String(ri.master_item_id)
+            : null;
+        const amt = Number(ri.amount || ri.quantity_amount || 0);
+        const u = String(ri.unit || ri.quantity_unit || "g");
+        const rName = ri.raw_name || ri.custom_name ? String(ri.raw_name || ri.custom_name) : null;
+
         return {
           id: String(ri.id),
           recipeId: String(ri.recipe_id),
-          masterIngredientId: ri.item_id
-            ? String(ri.item_id)
-            : ri.master_item_id
-              ? String(ri.master_item_id)
-              : null,
+          recipe_id: String(ri.recipe_id),
+          masterIngredientId: masterId,
+          master_item_id: masterId,
           subRecipeId: ri.sub_recipe_id ? String(ri.sub_recipe_id) : null,
+          sub_recipe_id: ri.sub_recipe_id ? String(ri.sub_recipe_id) : null,
+          calculation_type: (ri.calculation_type || "fixed_weight") as string,
           calculationType: (ri.calculation_type || "fixed_weight") as
             "fixed_weight" | "bakers_percentage",
           baseCalculationGroup: Boolean(ri.base_calculation_group),
+          base_calculation_group: Boolean(ri.base_calculation_group),
           isReference: Boolean(ri.is_reference),
+          is_reference: Boolean(ri.is_reference),
           bakersPercentage:
+            ri.bakers_percentage !== null && ri.bakers_percentage !== undefined
+              ? Number(ri.bakers_percentage)
+              : null,
+          bakers_percentage:
             ri.bakers_percentage !== null && ri.bakers_percentage !== undefined
               ? Number(ri.bakers_percentage)
               : null,
           originalInputString: ri.original_input_string
             ? String(ri.original_input_string)
             : null,
+          original_input_string: ri.original_input_string
+            ? String(ri.original_input_string)
+            : null,
           standardWeightG:
             ri.standard_weight_g !== null && ri.standard_weight_g !== undefined
               ? Number(ri.standard_weight_g)
               : null,
-          amount: Number(ri.amount),
-          unit: String(ri.unit),
+          standard_weight_g:
+            ri.standard_weight_g !== null && ri.standard_weight_g !== undefined
+              ? Number(ri.standard_weight_g)
+              : null,
+          amount: amt,
+          quantity_amount: amt,
+          unit: u,
+          quantity_unit: u,
           prepNotes: ri.prep_notes ? String(ri.prep_notes) : null,
-          rawName: ri.raw_name ? String(ri.raw_name) : null,
+          prep_notes: ri.prep_notes ? String(ri.prep_notes) : null,
+          rawName: rName,
+          custom_name: rName,
           component: ri.component ? String(ri.component) : null,
-          createdAt: String(ri.created_at),
+          sort_order: ri.sort_order !== null && ri.sort_order !== undefined ? Number(ri.sort_order) : 0,
+          cost_contribution: ri.cost_contribution !== null && ri.cost_contribution !== undefined
+            ? Number(ri.cost_contribution)
+            : null,
+          createdAt: String(ri.created_at || new Date().toISOString()),
+          created_at: String(ri.created_at || new Date().toISOString()),
           masterIngredient,
         };
       })
@@ -127,15 +158,27 @@ export function mapRecipeRow(row: Record<string, unknown>): Recipe {
     Record<string, unknown>[] | null;
   const tagIds = tagsRaw ? tagsRaw.map((t) => String(t.tag_id)) : [];
 
+  const title = String(row.title || row.name || "Untitled Recipe");
+  const yieldCount = Number(row.yield_count || row.yield_quantity || 1);
+  const yieldUnit = String(row.yield_unit || "servings");
+  const orgId = String(row.organization_id || "");
+
   return {
     id: String(row.id),
-    organizationId: String(row.organization_id),
-    title: String(row.title),
-    yieldCount: Number(row.yield_count),
-    yieldUnit: String(row.yield_unit),
+    organizationId: orgId,
+    organization_id: orgId,
+    title,
+    name: title,
+    yieldCount,
+    yield_quantity: yieldCount,
+    yieldUnit,
+    yield_unit: yieldUnit,
     vesselId: row.vessel_id ? String(row.vessel_id) : null,
     instructions: (row.instructions || []) as Recipe["instructions"],
-    createdAt: String(row.created_at),
+    createdAt: String(row.created_at || new Date().toISOString()),
+    created_at: String(row.created_at || new Date().toISOString()),
+    updatedAt: String(row.updated_at || new Date().toISOString()),
+    updated_at: String(row.updated_at || new Date().toISOString()),
     categoryId: row.category_id ? String(row.category_id) : null,
     status: (row.status || "PENDING_REVIEW") as Recipe["status"],
     sourceBook: row.source_book ? String(row.source_book) : null,
@@ -150,6 +193,7 @@ export function mapRecipeRow(row: Record<string, unknown>): Recipe {
         : null,
     vessel,
     recipeIngredients,
+    recipe_ingredients: recipeIngredients as any,
     tagIds,
-  };
+  } as Recipe;
 }

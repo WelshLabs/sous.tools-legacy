@@ -100,6 +100,20 @@ export class Neo4jSyncService {
    * Processes the incoming database webhook payload and translates it dynamically to Neo4j operations.
    */
   async handleWebhook(payload: SupabaseWebhookPayload): Promise<void> {
+    try {
+      await this.processWebhook(payload);
+    } catch (err: any) {
+      this.logger.error(
+        `Failed to sync webhook to Neo4j for [${payload.schema}.${payload.table}] [${payload.type}]:`,
+        err?.stack || err,
+      );
+    }
+  }
+
+  /**
+   * Internal webhook processing pipeline
+   */
+  private async processWebhook(payload: SupabaseWebhookPayload): Promise<void> {
     const { table, type, schema } = payload;
     this.logger.log(
       `Processing database webhook: [${schema}.${table}] [${type}]`,

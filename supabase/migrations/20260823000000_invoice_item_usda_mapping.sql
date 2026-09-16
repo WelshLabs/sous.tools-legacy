@@ -1,0 +1,5 @@
+ALTER TABLE IF EXISTS public.invoice_items
+  ADD COLUMN IF NOT EXISTS fdc_id INTEGER;
+
+ALTER TABLE IF EXISTS public.invoice_items
+  ADD COLUMN IF NOT EXISTS unit TEXT;

@@ -37,17 +37,19 @@ export function createRestClient(
         !request.url.includes("/auth/login") &&
         !request.url.includes("/auth/session")
       ) {
-        try {
-          const refreshed = await refreshAuthSession();
-          if (refreshed) {
-            let retryReq = (request as any)._retryClone || request.clone();
-            if (retryReq.credentials !== "include") {
-              retryReq = new Request(retryReq, { credentials: "include" });
+        if (typeof window !== "undefined") {
+          try {
+            const refreshed = await refreshAuthSession();
+            if (refreshed) {
+              let retryReq = (request as any)._retryClone || request.clone();
+              if (retryReq.credentials !== "include") {
+                retryReq = new Request(retryReq, { credentials: "include" });
+              }
+              return await fetch(retryReq);
             }
-            return await fetch(retryReq);
+          } catch (err) {
+            console.error("[api-client] REST client refresh retry failed:", err);
           }
-        } catch (err) {
-          console.error("[api-client] REST client refresh retry failed:", err);
         }
       }
       return response;

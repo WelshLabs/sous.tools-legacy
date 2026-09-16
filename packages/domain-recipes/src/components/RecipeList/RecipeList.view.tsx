@@ -111,7 +111,12 @@ export function RecipeCard({ recipe, onDelete }: RecipeCardProps) {
         >
           {recipe.instructions.length} step
           {recipe.instructions.length !== 1 ? "s" : ""}:{" "}
-          {recipe.instructions.map((step) => step.text).join(", ")}
+          {recipe.instructions
+            .map((step: any) =>
+              typeof step === "string" ? step : step?.text || "",
+            )
+            .filter(Boolean)
+            .join(", ")}
         </div>
       </div>
 

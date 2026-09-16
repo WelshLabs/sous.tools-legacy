@@ -19,5 +19,47 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 ALTER TABLE chat_conversations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE chat_conversations FORCE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "org_members_full_crud_chat_conversations" ON chat_conversations;
+CREATE POLICY "org_members_full_crud_chat_conversations" ON chat_conversations
+  FOR ALL USING (
+    organization_id = 'd0000000-0000-0000-0000-000000000000'::uuid
+    OR is_org_member(organization_id)
+    OR auth.role() = 'service_role'
+    OR current_user = 'postgres'
+  )
+  WITH CHECK (
+    organization_id = 'd0000000-0000-0000-0000-000000000000'::uuid
+    OR is_org_member(organization_id)
+    OR auth.role() = 'service_role'
+    OR current_user = 'postgres'
+  );
+
 ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE chat_messages FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "org_members_full_crud_chat_messages" ON chat_messages;
+CREATE POLICY "org_members_full_crud_chat_messages" ON chat_messages
+  FOR ALL USING (
+    EXISTS (
+      SELECT 1 FROM chat_conversations c
+      WHERE c.id = chat_messages.conversation_id
+        AND (
+          c.organization_id = 'd0000000-0000-0000-0000-000000000000'::uuid
+          OR is_org_member(c.organization_id)
+          OR auth.role() = 'service_role'
+          OR current_user = 'postgres'
+        )
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM chat_conversations c
+      WHERE c.id = chat_messages.conversation_id
+        AND (
+          c.organization_id = 'd0000000-0000-0000-0000-000000000000'::uuid
+          OR is_org_member(c.organization_id)
+          OR auth.role() = 'service_role'
+          OR current_user = 'postgres'
+        )
+    )
+  );

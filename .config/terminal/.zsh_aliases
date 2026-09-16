@@ -24,16 +24,16 @@ function ctx() {
 alias c="clear"
 alias ls="ls -lah"
 alias szsh="source ~/.zshrc"
-alias sous="cd $SOUS_ROOT"
+# alias sous="cd $SOUS_ROOT"
 
 # Infrastructure as Code Stack Management (Single docker-compose.yml)
 alias dco='docker compose'
-up() {
-  if [ -f .env ]; then
-    set -a; source .env; set +a
-  fi
-  infisical run --env=$INFISICAL_ENV --projectId=$INFISICAL_PROJECT_ID -- docker compose up -d
-}
+#up() {
+#  if [ -f .env ]; then
+#    set -a; source .env; set +a
+#  fi
+#  infisical run --env=$INFISICAL_ENV --projectId=$INFISICAL_PROJECT_ID -- docker compose up -d
+#}
 alias prod-up='docker compose --profile prod up -d'
 alias down='docker compose down'
 alias dlogs='docker compose logs -f'

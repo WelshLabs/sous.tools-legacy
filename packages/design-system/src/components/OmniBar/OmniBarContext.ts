@@ -56,7 +56,21 @@ export const useOmnibarContext = create<OmniBarState>((set) => ({
   chatHistory: [],
   setChatHistory: (history) => set({ chatHistory: history }),
   addMessage: (message) =>
-    set((state) => ({ chatHistory: [...state.chatHistory, message] })),
+    set((state) => {
+      const msgId = message.id || crypto.randomUUID();
+      const normalizedMsg = { ...message, id: msgId };
+      const existing = state.chatHistory;
+      const last = existing[existing.length - 1];
+
+      // If the incoming message has a valid defined id and matches the last message,
+      // merge it into the last entry (e.g. streaming tokens into the active bubble).
+      if (last && last.id && last.id === msgId) {
+        const merged = { ...last, ...normalizedMsg };
+        return { chatHistory: [...existing.slice(0, -1), merged] };
+      }
+
+      return { chatHistory: [...existing, normalizedMsg] };
+    }),
   markLoadingComplete: () =>
     set((state) => ({
       chatHistory: state.chatHistory.map((msg) =>

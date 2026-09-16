@@ -19,6 +19,19 @@ export class RecipesResolver {
     );
   }
 
+  private mapIngredients(ingredients: any[] = []) {
+    return ingredients.map((ingredient) => ({
+      ...ingredient,
+      masterIngredientId: ingredient.master_item_id,
+      rawName: ingredient.custom_name,
+      amount: ingredient.quantity_amount,
+      unit: ingredient.quantity_unit,
+      calculationType: ingredient.calculation_type,
+      baseCalculationGroup: ingredient.base_calculation_group,
+      prepNotes: ingredient.prep_notes,
+    }));
+  }
+
   @Query(() => [RecipeGQL], { name: "recipes" })
   async getRecipes(
     @Args("search", { nullable: true }) _search: string,
@@ -47,7 +60,7 @@ export class RecipesResolver {
         yieldUnit: input.yield_unit,
         instructions: input.instructions,
       } as any,
-      (input.ingredients || []) as any,
+      this.mapIngredients(input.ingredients as any[]),
     );
   }
 
@@ -64,7 +77,7 @@ export class RecipesResolver {
         yieldUnit: input.yield_unit,
         instructions: input.instructions,
       } as any,
-      input.ingredients as any,
+      this.mapIngredients(input.ingredients as any[]),
     );
   }
 

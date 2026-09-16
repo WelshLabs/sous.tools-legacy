@@ -80,22 +80,25 @@ export function calculateRecipeScale(
   ingredients.forEach((ing) => {
     const density = ing.masterIngredient?.densityGMl ?? 1.0;
     const name = ing.masterIngredient?.name ?? ing.rawName ?? "";
-    const isCount = COUNT_UNITS.has(ing.unit.toLowerCase().trim());
+    const unit = (ing.unit || "g").toLowerCase().trim();
+    const isCount = COUNT_UNITS.has(unit);
+    const isBakers =
+      ing.calculationType === "bakers_percentage" && !ing.baseCalculationGroup;
 
-    if (ing.calculationType === "fixed_weight" || ing.baseCalculationGroup) {
+    if (!isBakers) {
       let weightG = 0;
       if (isCount) {
         const est = getIngredientEstimatedWeight(
           name,
           ing.amount,
-          ing.unit,
+          ing.unit || "ea",
           density,
         );
         weightG = est ? est.totalWeightG : ing.amount; // fallback if unknown count weight
       } else {
         weightG = convertUnit(
           ing.amount,
-          ing.unit,
+          ing.unit || "g",
           "g",
           density,
           undefined,
@@ -126,7 +129,7 @@ export function calculateRecipeScale(
       (i) =>
         (i.masterIngredient?.name || i.rawName || "")
           .toLowerCase()
-          .includes("flour") && i.calculationType === "fixed_weight",
+          .includes("flour") && i.calculationType !== "bakers_percentage",
     );
     if (flourIng) {
       const comp = flourIng.component || "Base Recipe";
@@ -236,7 +239,10 @@ export function calculateRecipeScale(
     let weightInGrams = 0;
     let percentageOfBase: number | undefined;
 
-    if (ing.baseCalculationGroup || ing.calculationType === "fixed_weight") {
+    if (
+      ing.baseCalculationGroup ||
+      ing.calculationType !== "bakers_percentage"
+    ) {
       scaledAmount = ing.amount * multiplier;
       weightInGrams = (ingredientBaseWeightsG[ing.id] ?? 0) * multiplier;
 

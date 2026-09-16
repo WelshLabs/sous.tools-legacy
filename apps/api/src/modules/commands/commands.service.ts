@@ -248,32 +248,31 @@ export class CommandsService {
     userId?: string,
     orgId?: string,
   ): Promise<Array<{ id: string; title: string | null; updated_at: string }>> {
-    let query = supabase
-      .from("chat_conversations")
-      .select("id, title, updated_at");
+    const effectiveOrgId =
+      orgId || "d0000000-0000-0000-0000-000000000000";
 
+    const orConditions: string[] = [
+      `organization_id.eq.${effectiveOrgId}`,
+      `organization_id.eq.d0000000-0000-0000-0000-000000000000`,
+    ];
     if (userId) {
-      if (orgId && orgId !== "d0000000-0000-0000-0000-000000000000") {
-        query = query.or(
-          `user_id.eq.${userId},organization_id.eq.${orgId},user_id.eq.d0000000-0000-0000-0000-000000000000,user_id.is.null`,
-        );
-      } else {
-        query = query.or(
-          `user_id.eq.${userId},user_id.eq.d0000000-0000-0000-0000-000000000000,user_id.is.null`,
-        );
-      }
-    } else if (orgId && orgId !== "d0000000-0000-0000-0000-000000000000") {
-      query = query.or(
-        `organization_id.eq.${orgId},organization_id.eq.d0000000-0000-0000-0000-000000000000`,
-      );
+      orConditions.push(`user_id.eq.${userId}`);
+      orConditions.push(`user_id.eq.d0000000-0000-0000-0000-000000000000`);
+      orConditions.push(`user_id.is.null`);
     }
 
-    const { data, error } = await query
+    const { data, error } = await supabase
+      .from("chat_conversations")
+      .select("id, title, updated_at")
+      .or(orConditions.join(","))
       .order("updated_at", { ascending: false })
       .limit(50);
 
     if (error) {
-      this.logger.warn("Failed to list conversations for user:", error);
+      this.logger.warn(
+        "Failed to list filtered conversations, falling back to all:",
+        error,
+      );
       const { data: allData } = await supabase
         .from("chat_conversations")
         .select("id, title, updated_at")
@@ -305,6 +304,9 @@ export class CommandsService {
       content: row.content,
       attachments: row.attachments || undefined,
       timestamp: new Date(row.created_at),
+      uiAction: row.ui_action || undefined,
+      recipeData: row.recipe_data || undefined,
+      invoiceData: row.invoice_data || undefined,
     }));
   }
 
@@ -314,31 +316,7 @@ export class CommandsService {
     userId: string | undefined,
     msg: OmniMessage,
   ) {
-    if (!conversationId) return;
-
-    // Ensure conversation exists
-    const { data: existingConv } = await supabase
-      .from("chat_conversations")
-      .select("id, organization_id, user_id")
-      .eq("id", conversationId)
-      .single();
-
-    if (!existingConv) {
-      await supabase.from("chat_conversations").insert({
-        id: conversationId,
-        organization_id:
-          orgId !== "unknown" ? orgId : "d0000000-0000-0000-0000-000000000000",
-        user_id: userId || null,
-        title: "New Conversation",
-      });
-    }
-
-    await supabase.from("chat_messages").insert({
-      id: msg.id || randomUUID(),
-      conversation_id: conversationId,
-      role: msg.role,
-      content: msg.content,
-      attachments: msg.attachments || [],
-    });
+    // Delegate to ChatPersistenceService to ensure consistent upsert behavior
+    await this.chatPersistence.appendMessage(conversationId, orgId, userId, msg);
   }
 }

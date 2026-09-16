@@ -47,6 +47,19 @@ export class WsSupabaseAuthGuard implements CanActivate {
     }
 
     client.user = user;
+    if (!user.user_metadata?.organization_id && user.id) {
+      const { data: member } = await supabaseClient
+        .from("org_members")
+        .select("organization_id")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (member?.organization_id) {
+        user.user_metadata = user.user_metadata || {};
+        user.user_metadata.organization_id = member.organization_id;
+      }
+    }
     return true;
   }
 }

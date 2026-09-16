@@ -69,6 +69,7 @@ export interface ExtractedBlock {
     guessName: string;
     normalizedName?: string;
     quantity?: number;
+    unit?: string;
     unitPrice?: number;
     extendedPrice?: number;
     tenantMatches: Array<{ id: string; name: string; score?: number }>;
@@ -313,8 +314,17 @@ export class IngestionService {
     vendorItemString: string;
     itemId: string;
   }) {
-    const rawString = params.vendorItemString.trim();
+    const rawString = params.vendorItemString?.trim();
     if (!rawString || !params.vendorId || !params.itemId) return null;
+
+    const uuidRegex =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(params.itemId) || !uuidRegex.test(params.vendorId)) {
+      this.logger.warn(
+        `Skipping vendor_item_alias upsert for non-UUID vendor_id (${params.vendorId}) or item_id (${params.itemId})`,
+      );
+      return null;
+    }
 
     try {
       const { data, error } = await supabase
@@ -333,7 +343,9 @@ export class IngestionService {
         .maybeSingle();
 
       if (error) {
-        this.logger.error("Failed to upsert vendor_item_alias:", error);
+        this.logger.error(
+          `Failed to upsert vendor_item_alias: ${JSON.stringify(error)}`,
+        );
       } else if (data) {
         this.logger.log(
           `Upserted vendor_item_alias: "${rawString}" -> item ${params.itemId} for vendor ${params.vendorId}`,
@@ -452,11 +464,7 @@ export class IngestionService {
               origItem.unitPrice !== appItem.unitPrice ||
               origItem.quantity !== appItem.quantity;
 
-            if (
-              wasEdited ||
-              appItem.selectedTenantId ||
-              appItem.selectedUsdaId
-            ) {
+            if (wasEdited) {
               const delta: ManualCorrectionDelta = {
                 organizationId: params.organizationId,
                 reviewId: params.reviewId,
@@ -514,7 +522,7 @@ export class IngestionService {
               origIng.unit !== appIng.unit ||
               origIng.quantity !== appIng.quantity;
 
-            if (wasEdited || appIng.selectedTenantId || appIng.selectedUsdaId) {
+            if (wasEdited) {
               const delta: ManualCorrectionDelta = {
                 organizationId: params.organizationId,
                 reviewId: params.reviewId,
@@ -799,12 +807,15 @@ ${examples.join("\n")}`;
       params.parsedData?.documentHash ||
       params.parsedData?.idempotencyHash;
 
+    const orgId =
+      params.organizationId || "d0000000-0000-0000-0000-000000000000";
+
     if (hash) {
       try {
         const { data: existing } = await supabase
           .from("ingestion_reviews")
           .select("*")
-          .eq("organization_id", params.organizationId)
+          .eq("organization_id", orgId)
           .filter("parsed_data->>idempotencyHash", "eq", hash)
           .maybeSingle();
 
@@ -822,7 +833,7 @@ ${examples.join("\n")}`;
     const { data, error } = await supabase
       .from("ingestion_reviews")
       .insert({
-        organization_id: params.organizationId,
+        organization_id: orgId,
         user_id: params.userId || null,
         source: params.source,
         source_name: params.sourceName || null,
@@ -834,7 +845,9 @@ ${examples.join("\n")}`;
       .single();
 
     if (error) {
-      this.logger.error("Failed to insert ingestion_reviews:", error);
+      this.logger.error(
+        `Failed to insert ingestion_reviews: ${JSON.stringify(error)}`,
+      );
       throw error;
     }
 
@@ -865,16 +878,96 @@ ${examples.join("\n")}`;
       return data;
     }
 
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from("ingestion_reviews")
       .select("*")
       .eq("id", id)
-      .single();
+      .maybeSingle();
 
-    if (error || !data) {
-      throw new NotFoundException(`Ingestion review ${id} not found`);
+    if (data) {
+      return data;
     }
-    return data;
+
+    // Check if `id` is an invoice ID
+    const { data: invoice } = await supabase
+      .from("invoices")
+      .select("*, vendors(name), invoice_items(*, items(id, name, fdc_id))")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (invoice) {
+      const lineItems = (invoice.invoice_items || []).map((item: any) => ({
+        rawName: item.raw_name || item.name || "Item",
+        guessName: item.raw_name || item.name || "Item",
+        normalizedName: item.raw_name || item.name || "Item",
+        quantity: Number(item.quantity) || 1,
+        unitPrice: Number(item.unit_price) || 0,
+        unit: item.unit || "EACH",
+        extendedPrice:
+          Number(item.extended_price) ||
+          Number(item.quantity || 1) * Number(item.unit_price || 0),
+        selectedTenantId: item.master_item_id || item.item_id,
+        tenantMatches: item.items
+          ? [{ id: item.items.id, name: item.items.name }]
+          : [],
+        selectedUsdaId:
+          item.fdc_id || item.items?.fdc_id
+            ? Number(item.fdc_id || item.items.fdc_id)
+            : undefined,
+        usdaMatches:
+          item.fdc_id || item.items?.fdc_id
+            ? [
+                {
+                  fdcId: Number(item.fdc_id || item.items.fdc_id),
+                  description: item.items?.name || item.raw_name,
+                },
+              ]
+            : [],
+        autoAccepted: true,
+      }));
+
+      const synthPayload: IngestionReviewPayload = {
+        pages: [
+          {
+            pageNumber: 1,
+            blocks: [
+              {
+                id: invoice.id,
+                type: "INVOICE",
+                bbox: [0, 0, 1000, 1000],
+                vendorName:
+                  invoice.vendors?.name || invoice.vendor_name || "Vendor",
+                invoiceNumber: invoice.invoice_number,
+                date: invoice.invoice_date,
+                totals: {
+                  subtotal:
+                    Number(invoice.subtotal) ||
+                    Number(invoice.total_amount) ||
+                    0,
+                  tax: Number(invoice.tax_amount) || 0,
+                  total: Number(invoice.total_amount) || 0,
+                },
+                lineItems,
+              },
+            ],
+          },
+        ],
+        triageType: "INVOICE",
+      };
+
+      return {
+        id: invoice.id,
+        organization_id: invoice.organization_id,
+        source: "invoice",
+        source_name: invoice.invoice_number || "Invoice Mappings",
+        parsed_data: synthPayload,
+        status: "COMMITTED",
+        created_at: invoice.created_at,
+        updated_at: invoice.updated_at,
+      };
+    }
+
+    throw new NotFoundException(`Ingestion review or invoice ${id} not found`);
   }
 
   async updateReviewRecordState(
@@ -889,13 +982,84 @@ ${examples.join("\n")}`;
       })
       .eq("id", id)
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) {
-      this.logger.error(`Failed to update review record ${id}:`, error);
+      this.logger.error(
+        `Failed to update review record ${id}: ${error.message || JSON.stringify(error)}`,
+      );
       throw error;
     }
-    return data;
+    if (data) return data;
+
+    const invoiceBlock = parsedData.pages
+      ?.flatMap((page: any) => page.blocks || [])
+      .find((block: any) => block.type === "INVOICE");
+    if (!invoiceBlock) {
+      throw new NotFoundException(
+        `Ingestion review or invoice ${id} not found`,
+      );
+    }
+
+    const { data: invoiceItems, error: invoiceError } = await supabase
+      .from("invoice_items")
+      .select("id")
+      .eq("invoice_id", id)
+      .order("created_at", { ascending: true });
+    if (invoiceError) throw invoiceError;
+
+    for (const [index, lineItem] of (invoiceBlock.lineItems || []).entries()) {
+      const invoiceItem = invoiceItems?.[index];
+      if (!invoiceItem) continue;
+      const tenantId = lineItem.selectedTenantId || null;
+      const usdaId = lineItem.selectedUsdaId ?? null;
+      const { error: itemError } = await supabase
+        .from("invoice_items")
+        .update({ item_id: tenantId, fdc_id: usdaId })
+        .eq("id", invoiceItem.id);
+      if (itemError) throw itemError;
+
+      if (tenantId && usdaId !== null) {
+        await supabase
+          .from("items")
+          .update({ fdc_id: usdaId, updated_at: new Date().toISOString() })
+          .eq("id", tenantId);
+      }
+    }
+
+    return this.getReviewRecord(id);
+  }
+
+  async getInvoices(orgId: string) {
+    const { data: invoices, error } = await supabase
+      .from("invoices")
+      .select("*, vendors(name), invoice_items(*)")
+      .eq("organization_id", orgId)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      this.logger.error(`Failed to query invoices: ${JSON.stringify(error)}`);
+      return [];
+    }
+
+    return (invoices || []).map((inv: any) => ({
+      id: inv.id,
+      organization_id: inv.organization_id,
+      vendor_id: inv.vendor_id,
+      vendor_name: inv.vendors?.name || "Unknown Vendor",
+      invoice_number: inv.invoice_number,
+      total_amount: Number(inv.total_amount) || 0,
+      invoice_date: inv.invoice_date,
+      created_at: inv.created_at,
+      items: (inv.invoice_items || []).map((item: any) => ({
+        id: item.id,
+        raw_name: item.raw_name,
+        item_id: item.item_id,
+        quantity: Number(item.quantity) || 0,
+        unit_price: Number(item.unit_price) || 0,
+        created_at: item.created_at,
+      })),
+    }));
   }
 
   async commitReviewPayload(
@@ -983,22 +1147,38 @@ ${examples.join("\n")}`;
   }
 
   private async commitInvoiceBlock(block: ExtractedBlock, orgId: string) {
-    let vendorId: string | null = block.vendorId || null;
-    if (!vendorId && block.vendorName) {
+    const uuidRegex =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+    const isVendorUuid = block.vendorId && uuidRegex.test(block.vendorId);
+    let vendorId: string | null = isVendorUuid ? block.vendorId! : null;
+
+    const vendorName = (
+      block.vendorName ||
+      (block.vendorId && !isVendorUuid
+        ? `Vendor ${block.vendorId}`
+        : "General Vendor")
+    ).trim();
+
+    if (!vendorId && vendorName) {
       const { data: existingVendor } = await supabase
         .from("vendors")
         .select("id")
         .eq("organization_id", orgId)
-        .ilike("name", block.vendorName)
+        .ilike("name", vendorName)
         .maybeSingle();
 
       if (existingVendor) {
         vendorId = existingVendor.id;
       } else {
-        const { data: newVendor } = await supabase
+        const { data: newVendor, error: vErr } = await supabase
           .from("vendors")
-          .insert({ organization_id: orgId, name: block.vendorName })
-          .select("id")
+          .insert({
+            organization_id: orgId,
+            name: vendorName,
+            order_method: "MANUAL",
+          })
+          .select("*")
           .single();
         if (newVendor) {
           vendorId = newVendor.id;
@@ -1009,19 +1189,37 @@ ${examples.join("\n")}`;
             record: newVendor,
             old_record: null,
           });
+        } else if (vErr) {
+          this.logger.error(
+            `Failed to create vendor ${vendorName}: ${JSON.stringify(vErr)}`,
+          );
         }
       }
     }
     this.logger.log(`Invoice block vendor resolved: ${vendorId || "None"}`);
 
     const invoiceNumber =
-      block.invoiceNumber || block.invoiceId || "INV-UNKNOWN";
-    const invoiceDate =
-      block.date || block.invoiceDate || new Date().toISOString().split("T")[0];
-    const totalAmount = block.totals?.total ?? block.totals?.subtotal ?? 0;
+      block.invoiceNumber ||
+      block.invoiceId ||
+      `INV-${Date.now().toString(36).toUpperCase()}`;
+
+    let invoiceDate = new Date().toISOString().split("T")[0];
+    const rawDate = block.date || block.invoiceDate;
+    if (rawDate) {
+      const parsed = new Date(rawDate);
+      if (!isNaN(parsed.getTime())) {
+        invoiceDate = parsed.toISOString().split("T")[0];
+      }
+    }
+
+    const rawTotal = block.totals?.total ?? block.totals?.subtotal ?? 0;
+    const totalAmount =
+      typeof rawTotal === "number"
+        ? rawTotal
+        : parseFloat(String(rawTotal).replace(/[^0-9.-]+/g, "")) || 0;
 
     const invoiceHash = this.computeIdempotencyHash(
-      vendorId || block.vendorName || "",
+      vendorId || vendorName,
       invoiceNumber,
       invoiceDate,
     );
@@ -1039,6 +1237,28 @@ ${examples.join("\n")}`;
         this.logger.warn(
           `Invoice ${invoiceNumber} for vendor ${vendorId} already exists (${existingInvoice.id}). Skipping insertion to prevent duplicate ingestion. Idempotency Hash: ${invoiceHash}`,
         );
+
+        const { data: existingItems, error: existingItemsError } =
+          await supabase
+            .from("invoice_items")
+            .select("id")
+            .eq("invoice_id", existingInvoice.id)
+            .order("created_at", { ascending: true });
+        if (existingItemsError) throw existingItemsError;
+
+        for (const [index, lineItem] of (block.lineItems || []).entries()) {
+          const existingItem = existingItems?.[index];
+          if (!existingItem) continue;
+          const { error: updateItemError } = await supabase
+            .from("invoice_items")
+            .update({
+              item_id: lineItem.selectedTenantId || null,
+              fdc_id: lineItem.selectedUsdaId ?? null,
+              unit: lineItem.unit || "EACH",
+            })
+            .eq("id", existingItem.id);
+          if (updateItemError) throw updateItemError;
+        }
       } else {
         const { data: newInvoice, error } = await supabase
           .from("invoices")
@@ -1053,7 +1273,9 @@ ${examples.join("\n")}`;
           .single();
 
         if (error) {
-          this.logger.error("Failed to insert invoice record:", error);
+          this.logger.error(
+            `Failed to insert invoice record: ${JSON.stringify(error)}`,
+          );
         } else if (newInvoice) {
           await this.neo4jSync.handleWebhook({
             type: "INSERT",
@@ -1062,6 +1284,48 @@ ${examples.join("\n")}`;
             record: newInvoice,
             old_record: null,
           });
+
+          // Insert individual invoice items into invoice_items table
+          if (block.lineItems && block.lineItems.length > 0) {
+            const itemsToInsert = block.lineItems.map((li) => {
+              const rawPrice = li.unitPrice ?? li.extendedPrice ?? 0;
+              const unitPrice =
+                typeof rawPrice === "number"
+                  ? rawPrice
+                  : parseFloat(String(rawPrice).replace(/[^0-9.-]+/g, "")) || 0;
+              const rawQty = li.quantity ?? 1;
+              const quantity =
+                typeof rawQty === "number"
+                  ? rawQty
+                  : parseFloat(String(rawQty).replace(/[^0-9.-]+/g, "")) || 1;
+              const isUuid =
+                li.selectedTenantId &&
+                /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+                  li.selectedTenantId,
+                );
+
+              return {
+                invoice_id: newInvoice.id,
+                raw_name: li.rawName || li.guessName || "Unknown Item",
+                item_id: isUuid ? li.selectedTenantId : null,
+                fdc_id: li.selectedUsdaId ?? null,
+                unit: li.unit || "EACH",
+                quantity,
+                unit_price: unitPrice,
+              };
+            });
+
+            if (itemsToInsert.length > 0) {
+              const { error: itemsErr } = await supabase
+                .from("invoice_items")
+                .insert(itemsToInsert);
+              if (itemsErr) {
+                this.logger.error(
+                  `Failed to insert invoice_items: ${JSON.stringify(itemsErr)}`,
+                );
+              }
+            }
+          }
         }
       }
     }
@@ -1069,8 +1333,13 @@ ${examples.join("\n")}`;
     if (block.lineItems) {
       for (const item of block.lineItems) {
         if (item.selectedTenantId) {
+          const isUuid =
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+              item.selectedTenantId,
+            );
+
           // Upsert vendor_item_aliases on approval whenever a vendor item is mapped
-          if (vendorId && item.rawName) {
+          if (vendorId && item.rawName && isUuid) {
             await this.upsertVendorItemAlias({
               organizationId: orgId,
               vendorId,
@@ -1079,23 +1348,17 @@ ${examples.join("\n")}`;
             });
           }
 
-          if (item.unitPrice) {
-            const { data: updatedItem } = await supabase
-              .from("master_items")
-              .update({ updated_at: new Date().toISOString() })
-              .eq("id", item.selectedTenantId)
-              .select()
-              .single();
-
-            if (updatedItem) {
-              await this.neo4jSync.handleWebhook({
-                type: "UPDATE",
-                table: "master_items",
-                schema: "public",
-                record: updatedItem,
-                old_record: null,
-              });
+          if ((item.unitPrice || item.selectedUsdaId !== undefined) && isUuid) {
+            const itemUpdate: Record<string, unknown> = {
+              updated_at: new Date().toISOString(),
+            };
+            if (item.selectedUsdaId !== undefined) {
+              itemUpdate.fdc_id = item.selectedUsdaId;
             }
+            await supabase
+              .from("items")
+              .update(itemUpdate)
+              .eq("id", item.selectedTenantId);
           }
         }
       }
@@ -1172,7 +1435,7 @@ ${examples.join("\n")}`;
             .from("recipe_ingredients")
             .insert({
               recipe_id: recipe.id,
-              master_item_id: rawIng.selectedTenantId || null,
+              item_id: rawIng.selectedTenantId || null,
               raw_name: rawIng.rawName || rawIng.guessName || null,
               original_input_string:
                 norm?.originalInputString ||
@@ -1194,6 +1457,16 @@ ${examples.join("\n")}`;
             })
             .select()
             .single();
+
+          if (rawIng.selectedTenantId && rawIng.selectedUsdaId !== undefined) {
+            await supabase
+              .from("items")
+              .update({
+                fdc_id: rawIng.selectedUsdaId,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", rawIng.selectedTenantId);
+          }
 
           if (ingRecord) {
             await this.neo4jSync.handleWebhook({

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { Suspense } from "react";
 import { AppBar, OmniBarProvider } from "@soustools/design-system";
 import { logoutAction } from "@/app/actions/auth";
 import { GoogleDriveBrowserWrapper } from "@/components/GoogleDriveBrowserWrapper";
@@ -55,11 +55,13 @@ export default async function WorkspaceLayout({
         id="workspace-main"
         className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto"
       >
-        <OmniBarProvider>
-          {children}
-          {modal}
-          <GoogleDriveBrowserWrapper />
-        </OmniBarProvider>
+        <Suspense fallback={<div>Loading workspace...</div>}>
+          <OmniBarProvider>
+            {children}
+            {modal}
+            <GoogleDriveBrowserWrapper />
+          </OmniBarProvider>
+        </Suspense>
       </main>
     </div>
   );

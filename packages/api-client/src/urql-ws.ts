@@ -35,9 +35,27 @@ export function getSubscriptionWsClient(
     activeWsUrl = targetWsUrl;
     activeWsClient = createWsClient({
       url: targetWsUrl,
-      connectionParams: async () => ({
-        headers: headers || {},
-      }),
+      connectionParams: async () => {
+        const dynamicHeaders: Record<string, string> = { ...(headers || {}) };
+
+        // If no explicit Authorization header provided, try to pick up the
+        // Supabase access token from document.cookie in the browser and add
+        // it as a Bearer Authorization header so graphql-ws connections can
+        // authenticate when cookies are not forwarded to the WS transport.
+        try {
+          if (typeof document !== "undefined" && !dynamicHeaders["Authorization"]) {
+            const match = document.cookie.match(/(?:^|;\s*)sb-access-token=([^;]+)/);
+            if (match) {
+              const token = decodeURIComponent(match[1]);
+              if (token) dynamicHeaders["Authorization"] = `Bearer ${token}`;
+            }
+          }
+        } catch {
+          // ignore - non-browser contexts
+        }
+
+        return { headers: dynamicHeaders };
+      },
       retryAttempts: Infinity,
       shouldRetry: () => true,
     });

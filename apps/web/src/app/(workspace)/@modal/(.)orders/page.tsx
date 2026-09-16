@@ -74,11 +74,7 @@ export default function InterceptedOrdersModal() {
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // If the user navigates to another page, dismiss the parallel intercepted route
-  if (pathname !== "/orders") {
-    return null;
-  }
-
+  // All hooks must be called unconditionally before any conditional returns
   useEffect(() => {
     let isMounted = true;
     async function loadData() {
@@ -117,9 +113,14 @@ export default function InterceptedOrdersModal() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [router]);
 
+  // Guard: if the user navigates to another page, dismiss the intercepted route
+  if (pathname !== "/orders") {
+    return null;
+  }
+
   return (
     <div
-      className="fixed inset-0 z-[100000] flex items-center justify-center p-3 sm:p-6 md:p-10 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
+      className="animate-in fade-in fixed inset-0 z-[100000] flex items-center justify-center bg-black/80 p-3 backdrop-blur-md duration-200 sm:p-6 md:p-10"
       role="dialog"
       aria-modal="true"
       onClick={(e) => {
@@ -128,26 +129,26 @@ export default function InterceptedOrdersModal() {
         }
       }}
     >
-      <div className="relative flex h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-border bg-[#0a0d16] shadow-2xl animate-in zoom-in-95 duration-150">
+      <div className="border-border animate-in zoom-in-95 relative flex h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border bg-[#0a0d16] shadow-2xl duration-150">
         {/* Modal Header */}
-        <div className="flex shrink-0 items-center justify-between border-b border-border/60 bg-card/80 px-6 py-4 backdrop-blur-md">
+        <div className="border-border/60 bg-card/80 flex shrink-0 items-center justify-between border-b px-6 py-4 backdrop-blur-md">
           <div className="flex items-center gap-3">
-            <span className="h-2.5 w-2.5 rounded-full bg-sky-400 animate-pulse" />
-            <h2 className="text-base font-extrabold text-foreground tracking-tight">
+            <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-sky-400" />
+            <h2 className="text-foreground text-base font-extrabold tracking-tight">
               Living Order List & Purchasing
             </h2>
-            <span className="rounded-md bg-secondary/80 px-2 py-0.5 text-[10px] font-bold text-muted-foreground uppercase tracking-widest border border-border">
+            <span className="bg-secondary/80 text-muted-foreground border-border rounded-md border px-2 py-0.5 text-[10px] font-bold tracking-widest uppercase">
               Quick Access
             </span>
           </div>
           <button
             onClick={() => router.back()}
-            className="flex cursor-pointer items-center gap-2 rounded-xl border border-border bg-secondary/80 px-3.5 py-1.5 text-xs font-bold text-muted-foreground hover:bg-secondary hover:text-foreground transition-all active:scale-95 shadow-sm"
+            className="border-border bg-secondary/80 text-muted-foreground hover:bg-secondary hover:text-foreground flex cursor-pointer items-center gap-2 rounded-xl border px-3.5 py-1.5 text-xs font-bold shadow-sm transition-all active:scale-95"
             aria-label="Close modal"
           >
-            <X className="h-4 w-4 text-primary" />
+            <X className="text-primary h-4 w-4" />
             <span>Close</span>
-            <kbd className="ml-1 rounded border border-border bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+            <kbd className="border-border bg-muted/60 text-muted-foreground ml-1 rounded border px-1.5 py-0.5 font-mono text-[10px]">
               Esc
             </kbd>
           </button>
@@ -156,8 +157,8 @@ export default function InterceptedOrdersModal() {
         {/* Modal Content Body */}
         <div className="flex-1 overflow-y-auto bg-[#070911]/90">
           {loading ? (
-            <div className="flex h-96 flex-col items-center justify-center gap-3 text-muted-foreground">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <div className="text-muted-foreground flex h-96 flex-col items-center justify-center gap-3">
+              <Loader2 className="text-primary h-8 w-8 animate-spin" />
               <p className="text-xs font-black tracking-widest uppercase">
                 Loading Living Order List…
               </p>

@@ -5,7 +5,7 @@ import * as dotenv from "dotenv";
 dotenv.config();
 
 // Pull credentials from the environment, with fallbacks for your local setup
-const URI = process.env.NEO4J_URI || "bolt://127.0.0.1:7687";
+const URI = process.env.NEO4J_URI || "bolt://neo4j:7687";
 const USER = process.env.NEO4J_USERNAME || "neo4j";
 const PASSWORD = process.env.NEO4J_PASSWORD || "sousToolsPassword";
 console.log("URI", URI);

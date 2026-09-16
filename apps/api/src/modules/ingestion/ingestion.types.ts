@@ -75,3 +75,54 @@ export class IngestionUploadInputGQL {
   @Field(() => ID, { nullable: true })
   conversationId?: string;
 }
+
+@ObjectType()
+export class InvoiceItemGQL {
+  @Field(() => ID)
+  id!: string;
+
+  @Field(() => String)
+  raw_name!: string;
+
+  @Field(() => String, { nullable: true })
+  item_id?: string;
+
+  @Field(() => Number)
+  quantity!: number;
+
+  @Field(() => Number)
+  unit_price!: number;
+
+  @Field(() => String, { nullable: true })
+  created_at?: string;
+}
+
+@ObjectType()
+export class InvoiceGQL {
+  @Field(() => ID)
+  id!: string;
+
+  @Field(() => ID)
+  organization_id!: string;
+
+  @Field(() => String, { nullable: true })
+  vendor_id?: string;
+
+  @Field(() => String, { nullable: true })
+  vendor_name?: string;
+
+  @Field(() => String)
+  invoice_number!: string;
+
+  @Field(() => Number)
+  total_amount!: number;
+
+  @Field(() => String)
+  invoice_date!: string;
+
+  @Field(() => [InvoiceItemGQL], { nullable: true })
+  items?: InvoiceItemGQL[];
+
+  @Field(() => String, { nullable: true })
+  created_at?: string;
+}

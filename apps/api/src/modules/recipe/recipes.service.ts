@@ -34,10 +34,7 @@ export class RecipesService {
         `
         *,
         vessel:vessel_profiles(*),
-        recipe_ingredients (
-          *,
-          items (*)
-        ),
+        recipe_ingredients (*),
         recipe_tag_assignments(tag_id)
       `,
       )

@@ -1083,6 +1083,9 @@ importers:
 
   packages/domain-recipes:
     dependencies:
+      '@soustools/api-client':
+        specifier: workspace:*
+        version: link:../api-client
       '@soustools/api-types':
         specifier: workspace:*
         version: link:../api-types

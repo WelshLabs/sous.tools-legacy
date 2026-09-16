@@ -4,12 +4,12 @@ import { useState, useEffect } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { type OmniMessage } from "@soustools/api-types";
 import { useOmnibarContext } from "./OmniBarContext";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { graphqlClient } from "@soustools/api-client";
 
 const AGENT_TRAJECTORY_SUBSCRIPTION = `
-  subscription OnAgentTrajectory {
-    agentTrajectory {
+  subscription OnAgentTrajectory($conversationId: String) {
+    agentTrajectory(conversationId: $conversationId) {
       id
       conversationId
       role
@@ -45,6 +45,7 @@ export function useOmniSocket(): {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isListening, setIsListening] = useState(false);
   const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   const {
     contextPayload,
@@ -58,26 +59,56 @@ export function useOmniSocket(): {
 
   // Route real-time agent thought process steps over GraphQL subscriptions
   useEffect(() => {
+    const convId = searchParams?.get?.("chat") || (contextPayload as any)?.conversationId;
+    if (!convId) return;
+
+    setIsListening(true);
+
     const unsubscribe = graphqlClient.subscribe<{
       agentTrajectory: any;
     }>({
       query: AGENT_TRAJECTORY_SUBSCRIPTION,
+      variables: { conversationId: convId },
       onNext: (data) => {
         if (data?.agentTrajectory) {
           const step = data.agentTrajectory;
+          if (step.conversationId && step.conversationId !== convId) {
+            return;
+          }
           let parsedUiAction: any = undefined;
           let parsedRecipeData: any = undefined;
           let parsedInvoiceData: any = undefined;
 
           try {
-            if (step.uiAction) parsedUiAction = JSON.parse(step.uiAction);
-          } catch {}
+            if (step.uiAction) {
+              parsedUiAction =
+                typeof step.uiAction === "string"
+                  ? JSON.parse(step.uiAction)
+                  : step.uiAction;
+            }
+          } catch (e) {
+            console.warn("Failed to parse uiAction from subscription:", e);
+          }
           try {
-            if (step.recipeData) parsedRecipeData = JSON.parse(step.recipeData);
-          } catch {}
+            if (step.recipeData) {
+              parsedRecipeData =
+                typeof step.recipeData === "string"
+                  ? JSON.parse(step.recipeData)
+                  : step.recipeData;
+            }
+          } catch (e) {
+            console.warn("Failed to parse recipeData from subscription:", e);
+          }
           try {
-            if (step.invoiceData) parsedInvoiceData = JSON.parse(step.invoiceData);
-          } catch {}
+            if (step.invoiceData) {
+              parsedInvoiceData =
+                typeof step.invoiceData === "string"
+                  ? JSON.parse(step.invoiceData)
+                  : step.invoiceData;
+            }
+          } catch (e) {
+            console.warn("Failed to parse invoiceData from subscription:", e);
+          }
 
           const msg: OmniMessage = {
             id: step.id || crypto.randomUUID(),
@@ -102,9 +133,12 @@ export function useOmniSocket(): {
     });
 
     return () => {
-      unsubscribe();
+      try {
+        unsubscribe();
+      } catch {}
+      setIsListening(false);
     };
-  }, [addMessage, setIsProcessing, markLoadingComplete]);
+  }, [addMessage, setIsProcessing, markLoadingComplete, searchParams, contextPayload]);
 
   // Execute Background Command handler via GraphQL mutation
   useEffect(() => {

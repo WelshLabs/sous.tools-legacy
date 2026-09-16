@@ -2,9 +2,19 @@
 
 /* eslint-disable max-lines */
 
-import React from "react";
+import React, { useMemo, useState } from "react";
 import { Button } from "@soustools/design-system";
-import { ChefHat, ArrowLeft, Plus, Trash2, Clock, Percent } from "lucide-react";
+import {
+  ChefHat,
+  ArrowLeft,
+  Plus,
+  Trash2,
+  Clock,
+  Percent,
+  Check,
+  ChevronDown,
+  Search,
+} from "lucide-react";
 import Link from "next/link";
 import {
   type VesselProfile,
@@ -484,28 +494,14 @@ export function RecipeBuilderIngredientRow({
       }}
     >
       <div className="w-full flex-1">
-        <select
+        <RecipeIngredientCombobox
           value={line.masterIngredientId || ""}
-          onChange={(e) =>
-            handleUpdateLine(idx, {
-              masterIngredientId: e.target.value || null,
-            })
+          rawName={line.rawName}
+          ingredients={masterIngredients}
+          onChange={(masterIngredientId) =>
+            handleUpdateLine(idx, { masterIngredientId })
           }
-          className="w-full rounded-lg px-2.5 py-1.5 text-xs focus:outline-none"
-          style={inputStyle}
-        >
-          <option value="">
-            -- Unmapped Item {line.rawName ? `(${line.rawName})` : ""} --
-          </option>
-          {masterIngredients.map((mi: any) => (
-            <option key={mi.id} value={mi.id}>
-              {mi.name}{" "}
-              {mi.currentCostPerG
-                ? `($${mi.currentCostPerG.toFixed(3)}/g)`
-                : ""}
-            </option>
-          ))}
-        </select>
+        />
       </div>
 
       <div className="flex w-full items-center gap-2 md:w-auto">
@@ -659,6 +655,93 @@ export function RecipeBuilderIngredientRow({
       >
         <Trash2 className="h-3.5 w-3.5" />
       </button>
+    </div>
+  );
+}
+
+function RecipeIngredientCombobox({
+  value,
+  rawName,
+  ingredients,
+  onChange,
+}: {
+  value: string;
+  rawName?: string | null;
+  ingredients: MasterIngredient[];
+  onChange: (id: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const selected = ingredients.find((ingredient) => ingredient.id === value);
+  const filtered = useMemo(
+    () =>
+      ingredients.filter((ingredient) =>
+        ingredient.name.toLowerCase().includes(query.trim().toLowerCase()),
+      ),
+    [ingredients, query],
+  );
+
+  return (
+    <div className="relative w-full">
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs focus:outline-none"
+        style={{
+          backgroundColor: "var(--color-input)",
+          border: "1px solid var(--color-border)",
+          color: "var(--color-foreground)",
+        }}
+      >
+        <span className={selected ? "font-medium" : "italic opacity-60"}>
+          {selected?.name || `Unmapped Item${rawName ? ` (${rawName})` : ""}`}
+        </span>
+        <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
+      </button>
+      {open && (
+        <div className="absolute top-full left-0 z-50 mt-1 w-full overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900 shadow-xl">
+          <div className="flex items-center gap-2 border-b border-zinc-800 px-2.5 py-2">
+            <Search className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
+            <input
+              autoFocus
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search ingredients..."
+              className="min-w-0 flex-1 bg-transparent text-xs text-zinc-200 outline-none placeholder:text-zinc-500"
+            />
+          </div>
+          <div className="max-h-56 overflow-y-auto py-1">
+            <button
+              type="button"
+              onClick={() => {
+                onChange(null);
+                setOpen(false);
+              }}
+              className="flex w-full items-center justify-between px-3 py-2 text-left text-xs text-zinc-400 hover:bg-zinc-800"
+            >
+              Unmapped
+              {!value && <Check className="h-3.5 w-3.5" />}
+            </button>
+            {filtered.map((ingredient) => (
+              <button
+                type="button"
+                key={ingredient.id}
+                onClick={() => {
+                  onChange(ingredient.id);
+                  setOpen(false);
+                  setQuery("");
+                }}
+                className="flex w-full items-center justify-between px-3 py-2 text-left text-xs text-zinc-200 hover:bg-zinc-800"
+              >
+                {ingredient.name}
+                {ingredient.id === value && (
+                  <Check className="h-3.5 w-3.5 text-emerald-400" />
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

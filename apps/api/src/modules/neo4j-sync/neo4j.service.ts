@@ -8,11 +8,18 @@ export class Neo4jService implements OnApplicationShutdown {
   private readonly driver: Driver;
 
   constructor() {
+    let uri = config.NEO4J_URI;
+    // Normalize container hostname port mapping: inside docker network,
+    // neo4j listens on 7687 (7688 is the host port forwarding).
+    if (uri && uri.includes("neo4j:7688")) {
+      uri = uri.replace("neo4j:7688", "neo4j:7687");
+    }
+
     this.logger.log(
-      `Initializing Neo4j connection to ${config.NEO4J_URI} as user ${config.NEO4J_USERNAME}`,
+      `Initializing Neo4j connection to ${uri} as user ${config.NEO4J_USERNAME}`,
     );
     this.driver = neo4j.driver(
-      config.NEO4J_URI,
+      uri,
       neo4j.auth.basic(config.NEO4J_USERNAME, config.NEO4J_PASSWORD),
     );
   }

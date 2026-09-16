@@ -58,8 +58,15 @@ export function AnswerViewContainer({
   initialQuery = "",
   initialReviewId,
 }: AnswerViewContainerProps) {
-  const { chatHistory, setChatHistory, isProcessing, setIsProcessing, markLoadingComplete, contextPayload } =
-    useOmnibarContext();
+  const {
+    chatHistory,
+    setChatHistory,
+    addMessage,
+    isProcessing,
+    setIsProcessing,
+    markLoadingComplete,
+    contextPayload,
+  } = useOmnibarContext();
 
   const [prepListItems, setPrepListItems] = useState([
     { id: "1", text: "Dice 10lbs yellow onions for soup base", done: false },
@@ -98,9 +105,12 @@ export function AnswerViewContainer({
   const [hasFetchedHistory, setHasFetchedHistory] = useState(false);
 
   useEffect(() => {
+    let isCurrent = true;
+    setHasFetchedHistory(false);
+
     if (!initialReviewId) {
       setChatHistory([]);
-      setHasFetchedHistory(true);
+      if (isCurrent) setHasFetchedHistory(true);
       return;
     }
     graphqlClient
@@ -115,16 +125,34 @@ export function AnswerViewContainer({
           content: m.content,
           timestamp: new Date(m.timestamp),
           isLoading: m.isLoading,
-          uiAction: m.uiAction ? (typeof m.uiAction === "string" ? JSON.parse(m.uiAction) : m.uiAction) : undefined,
-          recipeData: m.recipeData ? (typeof m.recipeData === "string" ? JSON.parse(m.recipeData) : m.recipeData) : undefined,
-          invoiceData: m.invoiceData ? (typeof m.invoiceData === "string" ? JSON.parse(m.invoiceData) : m.invoiceData) : undefined,
+          uiAction: m.uiAction
+            ? typeof m.uiAction === "string"
+              ? JSON.parse(m.uiAction)
+              : m.uiAction
+            : undefined,
+          recipeData: m.recipeData
+            ? typeof m.recipeData === "string"
+              ? JSON.parse(m.recipeData)
+              : m.recipeData
+            : undefined,
+          invoiceData: m.invoiceData
+            ? typeof m.invoiceData === "string"
+              ? JSON.parse(m.invoiceData)
+              : m.invoiceData
+            : undefined,
         }));
-        setChatHistory(msgs);
+        if (isCurrent) setChatHistory(msgs);
       })
       .catch((err: unknown) =>
         console.error("Failed to fetch chat history via GraphQL:", err),
       )
-      .finally(() => setHasFetchedHistory(true));
+      .finally(() => {
+        if (isCurrent) setHasFetchedHistory(true);
+      });
+
+    return () => {
+      isCurrent = false;
+    };
   }, [initialReviewId, setChatHistory]);
 
   useEffect(() => {
@@ -142,8 +170,7 @@ export function AnswerViewContainer({
       timestamp: new Date(),
     };
 
-    const updated = [...chatHistory, newMsg];
-    setChatHistory(updated);
+    addMessage(newMsg);
 
     graphqlClient
       .request<{ executeOmniCommand: any }>(EXECUTE_OMNI_COMMAND_MUTATION, {
@@ -155,15 +182,12 @@ export function AnswerViewContainer({
       .then((res) => {
         if (res.data?.executeOmniCommand) {
           const step = res.data.executeOmniCommand;
-          setChatHistory([
-            ...updated,
-            {
-              id: step.id,
-              role: step.role as OmniMessage["role"],
-              content: step.content,
-              timestamp: new Date(step.timestamp),
-            },
-          ]);
+          addMessage({
+            id: step.id,
+            role: step.role as OmniMessage["role"],
+            content: step.content,
+            timestamp: new Date(step.timestamp),
+          });
         }
       })
       .catch((err) => {

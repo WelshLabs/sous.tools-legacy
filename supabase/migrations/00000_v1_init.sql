@@ -94,6 +94,7 @@ CREATE OR REPLACE FUNCTION is_org_member(org_id UUID)
 AS $$
   SELECT CASE
     WHEN org_id IS NULL THEN false
+    WHEN auth.role() = 'service_role' OR current_user = 'postgres' OR current_setting('request.jwt.claim.role', true) = 'service_role' THEN true
     ELSE EXISTS (
       SELECT 1 FROM org_members
       WHERE organization_id = org_id AND user_id = auth.uid()
@@ -109,6 +110,7 @@ CREATE OR REPLACE FUNCTION is_org_admin(org_id UUID)
 AS $$
   SELECT CASE
     WHEN org_id IS NULL THEN false
+    WHEN auth.role() = 'service_role' OR current_user = 'postgres' OR current_setting('request.jwt.claim.role', true) = 'service_role' THEN true
     ELSE EXISTS (
       SELECT 1 FROM org_members
       WHERE organization_id = org_id
@@ -650,7 +652,7 @@ CREATE TABLE IF NOT EXISTS vendors (
   id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id         UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
   name                    TEXT NOT NULL,
-  order_method            TEXT NOT NULL CHECK (order_method IN ('EMAIL', 'SMS', 'MANUAL', 'email', 'text')),
+  order_method            TEXT NOT NULL DEFAULT 'MANUAL' CHECK (order_method IN ('EMAIL', 'SMS', 'MANUAL', 'email', 'text')),
   order_days              JSONB DEFAULT '[]'::jsonb,
   email                   TEXT,
   phone                   TEXT,

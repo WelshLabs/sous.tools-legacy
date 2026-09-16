@@ -99,25 +99,39 @@ export class CommandsResolver {
       "d0000000-0000-0000-0000-000000000000";
 
     const convId = conversationId || randomUUID();
+    const attachments = contextPayload?.attachments || [];
     const userMsg: OmniMessage = {
       id: randomUUID(),
       role: "user",
       content: command,
       timestamp: new Date(),
+      attachments: attachments.length > 0 ? attachments : undefined,
     };
 
     const payload: OmnibarCommandPayload = {
       chatHistory: [userMsg],
+      attachments: attachments.length > 0 ? attachments : undefined,
       source: "omnibar",
       path: path || "/home",
       context: {
         ...(contextPayload || {}),
+        attachments: attachments.length > 0 ? attachments : undefined,
         conversationId: convId,
         userId,
       },
     };
 
-    const result = await this.commandsService.handleCommand(payload, orgId);
+    const result = await this.commandsService.handleCommand(
+      payload,
+      orgId,
+      // Emit trajectory steps to subscribers while the command executes
+      (msg: OmniMessage) => {
+        // fire-and-forget; CommandsService.emitTrajectoryMessage handles errors internally
+        this.commandsService.emitTrajectoryMessage(convId, orgId, msg).catch((e) =>
+          this.commandsService["logger"].warn("Failed to emit trajectory from resolver", e),
+        );
+      },
+    );
 
     return {
       id: randomUUID(),

@@ -79,6 +79,11 @@ export class NutritionResolver {
   @Query(() => GraphQLJSON, { name: "usdaSearch", nullable: true })
   async usdaSearch(@Args("query") query: string): Promise<any> {
     if (!query) return null;
-    return this.usdaResolver.resolveIngredient(query);
+    const topMatches = await this.usdaResolver.searchTop5(query);
+    if (topMatches && topMatches.length > 0) {
+      return topMatches;
+    }
+    const single = await this.usdaResolver.resolveIngredient(query);
+    return single ? [single] : [];
   }
 }

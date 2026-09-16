@@ -6,6 +6,7 @@ export interface ArtifactColumnContent {
   type: "INGESTION_REVIEW" | "REVENUE_CHART" | "TICKET_TIME_CHART" | "PREP_LIST" | "INGREDIENT_TABLE" | "SEARCH_RESULTS";
   reviewId?: string;
   label?: string;
+  initialPayload?: any;
 }
 
 export interface ArtifactColumnViewProps {

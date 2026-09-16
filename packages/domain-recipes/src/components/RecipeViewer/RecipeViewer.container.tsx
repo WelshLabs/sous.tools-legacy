@@ -98,15 +98,10 @@ export function RecipeViewer(props: RecipeViewerProps) {
   );
 
   useEffect(() => {
-    fetch("/api/recipes/ingredients")
-      .then((res) => res.json())
-      .then((json) => {
-        if (json.success && json.data) {
-          setLiveIngredients(json.data);
-        }
-      })
-      .catch((err) => console.error("Failed to fetch live ingredients:", err));
-  }, []);
+    if (initialMasterIngredients && initialMasterIngredients.length > 0) {
+      setLiveIngredients(initialMasterIngredients);
+    }
+  }, [initialMasterIngredients]);
 
   const [internalCostData, setInternalCostData] =
     useState<RecipeCostData | null>(initialCostData);

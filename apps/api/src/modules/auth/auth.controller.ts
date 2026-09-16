@@ -45,15 +45,29 @@ export const REFRESH_TOKEN_COOKIE = "sb-refresh-token";
  * In development we omit `domain` so the cookie is scoped to localhost.
  */
 export const getCookieOptions = (req?: Request) => {
-  const isSecureEnv =
+  let isSecureEnv =
     config.IS_PRODUCTION ||
     config.IS_SECURE_ENV ||
     config.NODE_ENV === "staging";
 
+  // Dynamically detect secure if possible
+  if (req) {
+    const proto = req.headers["x-forwarded-proto"] || req.protocol;
+    if (proto === "https") {
+      isSecureEnv = true;
+    } else if (proto === "http" && !config.IS_PRODUCTION) {
+      // If we are definitely on HTTP and not strictly production, don't force secure
+      // to avoid browsers silently dropping the cookie.
+      isSecureEnv = false;
+    }
+  }
+
   let domain: string | undefined = undefined;
-  if (isSecureEnv && req) {
+  if (req) {
     const host = req.get("host") || req.hostname || "";
-    if (host.includes("sous.tools")) {
+    // Only set domain=.sous.tools if we are actually on a sous.tools subdomain
+    // and not localhost or an IP address.
+    if (host.includes("sous.tools") && !host.includes("localhost")) {
       domain = ".sous.tools";
     }
   }

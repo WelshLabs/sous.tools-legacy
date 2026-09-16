@@ -7,6 +7,7 @@ import {
   IngestionReviewRecordGQL,
   IngestionUploadPayloadGQL,
   IngestionUploadInputGQL,
+  InvoiceGQL,
 } from "./ingestion.types";
 
 @Resolver(() => IngestionReviewRecordGQL)
@@ -31,6 +32,12 @@ export class IngestionResolver {
   })
   async getReview(@Args("id") id: string): Promise<any> {
     return this.ingestionService.getReviewRecord(id);
+  }
+
+  @Query(() => [InvoiceGQL], { name: "invoices" })
+  async getInvoices(@Context() ctx: any): Promise<any[]> {
+    const orgId = this.getOrgId(ctx);
+    return this.ingestionService.getInvoices(orgId);
   }
 
   @Query(() => GraphQLJSON, { name: "unmappedDataReport", nullable: true })

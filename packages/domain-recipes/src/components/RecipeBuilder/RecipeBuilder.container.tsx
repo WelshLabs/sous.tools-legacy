@@ -14,6 +14,13 @@ import {
   type RecipeInstructionStep,
 } from "../../types";
 import { RecipeBuilderView } from "./RecipeBuilder.view";
+import { graphqlClient } from "@soustools/api-client";
+
+const UPDATE_RECIPE_MUTATION = `
+  mutation UpdateRecipe($id: String!, $input: UpdateRecipeInputGQL!) {
+    updateRecipe(id: $id, input: $input) { id }
+  }
+`;
 
 export interface RecipeBuilderProps {
   initialData?: Recipe | null;
@@ -45,19 +52,14 @@ export function RecipeBuilder(props: RecipeBuilderProps) {
   } = props;
 
   const [liveIngredients, setLiveIngredients] = useState<MasterIngredient[]>(
-    initialMasterIngredients,
+    initialMasterIngredients || [],
   );
 
   useEffect(() => {
-    fetch("/api/recipes/ingredients")
-      .then((res) => res.json())
-      .then((json) => {
-        if (json.success && json.data) {
-          setLiveIngredients(json.data);
-        }
-      })
-      .catch((err) => console.error("Failed to fetch live ingredients:", err));
-  }, []);
+    if (initialMasterIngredients && initialMasterIngredients.length > 0) {
+      setLiveIngredients(initialMasterIngredients);
+    }
+  }, [initialMasterIngredients]);
 
   const [title, setTitle] = useState("");
   const [yieldCount, setYieldCount] = useState(1);
@@ -127,23 +129,27 @@ export function RecipeBuilder(props: RecipeBuilderProps) {
       if (onSave) {
         await onSave(payload);
       } else {
-        const method = initialData ? "PUT" : "POST";
-        const url = initialData
-          ? `/api/recipes/${initialData.id}`
-          : "/api/recipes";
-
-        const res = await fetch(url, {
-          method,
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
+        if (!initialData?.id) throw new Error("Recipe ID is required to save");
+        await graphqlClient.request(UPDATE_RECIPE_MUTATION, {
+          id: initialData.id,
+          input: {
+            name: title,
+            yield_quantity: yieldCount,
+            yield_unit: yieldUnit,
+            instructions: steps.map((step) => step.text),
+            ingredients: ingredients.map((ingredient) => ({
+              master_item_id: ingredient.masterIngredientId,
+              custom_name: ingredient.rawName || null,
+              quantity_amount: ingredient.amount,
+              quantity_unit: ingredient.unit,
+              calculation_type: ingredient.calculationType,
+              base_calculation_group: ingredient.baseCalculationGroup,
+              prep_notes: ingredient.prepNotes || null,
+            })),
+          },
         });
-
-        if (res.ok) {
-          if (typeof window !== "undefined") {
-            window.location.href = initialData?.id
-              ? `/recipes/${initialData.id}`
-              : "/recipes";
-          }
+        if (typeof window !== "undefined") {
+          window.location.href = `/recipes/${initialData.id}`;
         }
       }
     } finally {

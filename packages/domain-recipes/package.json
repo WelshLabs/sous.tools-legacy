@@ -33,6 +33,7 @@
     "@soustools/eslint-config": "workspace:*"
   },
   "dependencies": {
+    "@soustools/api-client": "workspace:*",
     "@soustools/design-system": "workspace:*",
     "@soustools/api-types": "workspace:*",
     "lucide-react": "^1.17.0"

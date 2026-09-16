@@ -73,11 +73,10 @@ export class IngestionProcessor extends WorkerHost {
   }
 
   async process(job: Job<IngestionJobData>): Promise<any> {
-    this.logger.log(
-      `Processing multi-agent debate ingestion job ${job.id} for org ${job.data.organizationId}`,
-    );
+    const organizationId =
+      (job.data as any).organizationId ||
+      "d0000000-0000-0000-0000-000000000000";
     const {
-      organizationId,
       userId,
       source,
       sourceName,
@@ -141,9 +140,48 @@ export class IngestionProcessor extends WorkerHost {
           overallError = error;
         }
       }
+      let cleanImageUrl = pInput.imageUrl;
+      if (cleanImageUrl && cleanImageUrl.startsWith("data:")) {
+        try {
+          const matches = cleanImageUrl.match(
+            /^data:([A-Za-z-+\/]+);base64,(.+)$/,
+          );
+          if (matches && matches.length === 3) {
+            const mimeType = matches[1];
+            const base64Data = matches[2];
+            const buffer = Buffer.from(base64Data, "base64");
+            const ext =
+              mimeType.split("/")[1]?.replace("jpeg", "jpg") || "bin";
+            const fileName = `${organizationId}/${randomUUID()}.${ext}`;
+
+            const { data: uploadData, error: uploadErr } =
+              await supabase.storage
+                .from("ingestion-sources")
+                .upload(fileName, buffer, {
+                  contentType: mimeType,
+                  upsert: true,
+                });
+
+            if (!uploadErr && uploadData) {
+              const { data: publicUrlData } = supabase.storage
+                .from("ingestion-sources")
+                .getPublicUrl(fileName);
+              if (publicUrlData?.publicUrl) {
+                cleanImageUrl = publicUrlData.publicUrl;
+              }
+            }
+          }
+        } catch (storageErr) {
+          this.logger.warn(
+            "Failed to upload base64 to storage bucket in processor:",
+            storageErr,
+          );
+        }
+      }
+
       pagesData.push({
         pageNumber: pInput.pageNumber,
-        imageUrl: pInput.imageUrl,
+        imageUrl: cleanImageUrl,
         blocks,
       });
     }
@@ -206,6 +244,26 @@ export class IngestionProcessor extends WorkerHost {
         orgId: organizationId,
         userId,
       });
+    }
+
+    // Emit a render_component directive so the client can open the UniversalReviewComponent
+    // and persist a render message in the chat history. The `message` is a stringified
+    // component descriptor that the frontend will parse and render.
+    try {
+      const renderDirective = JSON.stringify({
+        componentName: "INGESTION_REVIEW",
+        props: { reviewId: reviewRecord.id, initialPayload: parsedDataPayload },
+      });
+      this.commandsGateway.emitIngestionUpdate({
+        reviewId: reviewRecord.id,
+        conversationId,
+        status: "RENDER",
+        message: renderDirective,
+        orgId: organizationId,
+        userId,
+      });
+    } catch (err) {
+      this.logger.warn("Failed to emit render_component directive:", err);
     }
 
     // Real-time UI notification trigger in Postgres
@@ -282,6 +340,33 @@ export class IngestionProcessor extends WorkerHost {
           organizationId,
           userId,
           summaryMsg,
+        );
+
+        // Emit a follow-up UI action message instructing the client to open
+        // the ingestion review canvas and populate it with the parsed data.
+        const reviewOpenMsg: any = {
+          id: randomUUID(),
+          role: "model",
+          content: "Ingestion review ready.",
+          timestamp: new Date(),
+          uiAction: {
+            type: "UPDATE_REVIEW_STATE",
+            action: "OPEN_REVIEW",
+            reviewId: reviewRecord.id,
+            parsedData: parsedDataPayload,
+          },
+        };
+
+        this.commandsGateway.emitChatMessageToConversation(
+          conversationId,
+          reviewOpenMsg,
+          organizationId,
+        );
+        await this.chatPersistence.appendMessage(
+          conversationId,
+          organizationId,
+          userId,
+          reviewOpenMsg,
         );
       }
     } catch (wsErr) {
@@ -465,8 +550,13 @@ For PROSE or TEXTBOOK:
 
 ${rawText ? `Page input:\n${rawText.substring(0, 4000)}` : ""}`;
 
-    // Try Gemini 1.5 Pro first, falling back to omnibar / Gemini 1.5 Flash
-    const modelsToTry = ["gemini-1.5-pro", "gemini-1.5-flash", "omnibar"];
+    // Try studio-3.7-flash first, falling back to studio-3.5-flash / omnibar / flash-latest
+    const modelsToTry = [
+      "studio-3.7-flash",
+      "studio-3.5-flash",
+      "omnibar",
+      "flash-latest",
+    ];
     let lastError: any;
 
     for (const model of modelsToTry) {
@@ -645,7 +735,7 @@ ${rawText ? rawText.substring(0, 3500) : "[No raw text, visual inspection]"}
 Extracted Blocks:
 ${JSON.stringify(blocks, null, 2)}`;
 
-      const modelsToTry = ["claude-3-5-sonnet", "omnibar", "gemini-1.5-flash"];
+      const modelsToTry = ["claude-sonnet", "studio-3.7-flash", "omnibar"];
 
       for (const model of modelsToTry) {
         try {
@@ -767,7 +857,7 @@ Reconcile your extraction against the Critic's findings and the raw source text:
             Authorization: `Bearer ${config.OPENAI_API_KEY || "sk-1234"}`,
           },
           body: JSON.stringify({
-            model: "gemini-1.5-pro",
+            model: "studio-3.7-flash",
             messages: [
               {
                 role: "user",
@@ -842,7 +932,7 @@ Reconcile your extraction against the Critic's findings and the raw source text:
     _imageUrl?: string,
     conversationId?: string,
     organizationId?: string,
-    userId?: string,
+    _userId?: string,
   ): Promise<{
     blocks: ExtractedBlock[];
     fallbackUsed: boolean;
@@ -890,29 +980,14 @@ Reconcile your extraction against the Critic's findings and the raw source text:
     try {
       // 1. Triage routing via Ollama
       if (conversationId) {
-        this.commandsGateway.emitIngestionUpdate({
-          reviewId: "pending",
-          conversationId,
-          status: "IN_PROGRESS",
-          message: "Step 1/4: Triaging document structure via Ollama...",
-          orgId: organizationId,
-          userId,
-        });
+        this.commandsGateway.emitChatMessageToConversation(conversationId, { id: randomUUID(), role: "agent_step", content: "Step 1/4: Triaging document structure via Ollama...", timestamp: new Date() }, organizationId);
       }
       const triage = await this.triageInput(rawText, _imageUrl);
       triageType = triage.documentType;
 
       // 2. Primary Extraction via Gemini 1.5 Pro
       if (conversationId) {
-        this.commandsGateway.emitIngestionUpdate({
-          reviewId: "pending",
-          conversationId,
-          status: "IN_PROGRESS",
-          message:
-            "Step 2/4: Extracting structured data with Gemini 1.5 Pro...",
-          orgId: organizationId,
-          userId,
-        });
+        this.commandsGateway.emitChatMessageToConversation(conversationId, { id: randomUUID(), role: "agent_step", content: "Step 2/4: Extracting structured data with Gemini 1.5 Pro...", timestamp: new Date() }, organizationId);
       }
       let preliminaryVendorName: string | undefined;
       const vendorMatch = rawText.match(
@@ -934,15 +1009,7 @@ Reconcile your extraction against the Critic's findings and the raw source text:
 
       // 3. Critic Verification via Claude 3.5 Sonnet
       if (conversationId) {
-        this.commandsGateway.emitIngestionUpdate({
-          reviewId: "pending",
-          conversationId,
-          status: "IN_PROGRESS",
-          message:
-            "Step 3/4: Cross-examining extraction with Claude 3.5 Sonnet...",
-          orgId: organizationId,
-          userId,
-        });
+        this.commandsGateway.emitChatMessageToConversation(conversationId, { id: randomUUID(), role: "agent_step", content: "Step 3/4: Cross-examining extraction with Claude 3.5 Sonnet...", timestamp: new Date() }, organizationId);
       }
       const critique = await this.critiqueWithClaudeSonnet(
         initialBlocks,
@@ -959,15 +1026,7 @@ Reconcile your extraction against the Critic's findings and the raw source text:
         );
 
         if (conversationId) {
-          this.commandsGateway.emitIngestionUpdate({
-            reviewId: "pending",
-            conversationId,
-            status: "IN_PROGRESS",
-            message:
-              "Step 4/4: Multi-agent debate in progress: Reconciling discrepancies with Gemini 1.5 Pro...",
-            orgId: organizationId,
-            userId,
-          });
+          this.commandsGateway.emitChatMessageToConversation(conversationId, { id: randomUUID(), role: "agent_step", content: "Step 4/4: Multi-agent debate in progress: Reconciling discrepancies with Gemini 1.5 Pro...", timestamp: new Date() }, organizationId);
         }
 
         extractedBlocks = await this.reconcileDebateWithGeminiPro(
@@ -1007,14 +1066,7 @@ Reconcile your extraction against the Critic's findings and the raw source text:
 
       if (blockType === "RECIPE") {
         if (conversationId) {
-          this.commandsGateway.emitIngestionUpdate({
-            reviewId: "pending",
-            conversationId,
-            status: "IN_PROGRESS",
-            message: "Normalizing culinary terms & resolving USDA nutrition...",
-            orgId: organizationId,
-            userId,
-          });
+          this.commandsGateway.emitChatMessageToConversation(conversationId, { id: randomUUID(), role: "agent_step", content: "Normalizing culinary terms & resolving USDA nutrition...", timestamp: new Date() }, organizationId);
         }
         const rawIngredients = b.ingredients || [
           { rawName: "Sample Ingredient" },

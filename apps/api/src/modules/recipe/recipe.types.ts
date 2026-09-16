@@ -6,29 +6,71 @@ export class RecipeIngredientGQL {
   @Field(() => ID)
   id!: string;
 
-  @Field(() => ID)
-  recipe_id!: string;
+  @Field(() => ID, { nullable: true })
+  recipe_id?: string;
+
+  @Field(() => ID, { nullable: true })
+  recipeId?: string;
 
   @Field(() => ID, { nullable: true })
   master_item_id?: string;
 
   @Field(() => ID, { nullable: true })
+  masterIngredientId?: string;
+
+  @Field(() => ID, { nullable: true })
   sub_recipe_id?: string;
+
+  @Field(() => ID, { nullable: true })
+  subRecipeId?: string;
 
   @Field(() => String, { nullable: true })
   custom_name?: string;
 
-  @Field(() => Float)
-  quantity_amount!: number;
+  @Field(() => String, { nullable: true })
+  rawName?: string;
 
-  @Field(() => String)
-  quantity_unit!: string;
+  @Field(() => Float, { nullable: true })
+  amount?: number;
+
+  @Field(() => Float, { nullable: true })
+  quantity_amount?: number;
+
+  @Field(() => String, { nullable: true })
+  unit?: string;
+
+  @Field(() => String, { nullable: true })
+  quantity_unit?: string;
 
   @Field(() => Float, { nullable: true })
   cost_contribution?: number;
 
   @Field(() => Int, { nullable: true })
   sort_order?: number;
+
+  @Field(() => String, { nullable: true })
+  calculation_type?: string;
+
+  @Field(() => Boolean, { nullable: true })
+  base_calculation_group?: boolean;
+
+  @Field(() => Boolean, { nullable: true })
+  is_reference?: boolean;
+
+  @Field(() => Float, { nullable: true })
+  bakers_percentage?: number;
+
+  @Field(() => String, { nullable: true })
+  original_input_string?: string;
+
+  @Field(() => Float, { nullable: true })
+  standard_weight_g?: number;
+
+  @Field(() => String, { nullable: true })
+  prep_notes?: string;
+
+  @Field(() => String, { nullable: true })
+  component?: string;
 
   @Field(() => String, { nullable: true })
   created_at?: string;
@@ -63,8 +105,14 @@ export class RecipeGQL {
   @Field(() => ID)
   organization_id!: string;
 
-  @Field(() => String)
-  name!: string;
+  @Field(() => String, { nullable: true })
+  name?: string;
+
+  @Field(() => String, { nullable: true })
+  title?: string;
+
+  @Field(() => String, { nullable: true })
+  status?: string;
 
   @Field(() => String, { nullable: true })
   description?: string;
@@ -75,8 +123,14 @@ export class RecipeGQL {
   @Field(() => Float, { nullable: true })
   yield_quantity?: number;
 
+  @Field(() => Float, { nullable: true })
+  yieldCount?: number;
+
   @Field(() => String, { nullable: true })
   yield_unit?: string;
+
+  @Field(() => String, { nullable: true })
+  yieldUnit?: string;
 
   @Field(() => Float, { nullable: true })
   serving_size?: number;
@@ -96,8 +150,8 @@ export class RecipeGQL {
   @Field(() => Int, { nullable: true })
   cook_time_minutes?: number;
 
-  @Field(() => [String], { nullable: true })
-  instructions?: string[];
+  @Field(() => GraphQLJSON, { nullable: true })
+  instructions?: any;
 
   @Field(() => [String], { nullable: true })
   allergens?: string[];

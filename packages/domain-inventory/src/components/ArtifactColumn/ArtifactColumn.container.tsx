@@ -55,12 +55,16 @@ export function ArtifactColumnContainer({
 
   if (renderDirectiveMessage) {
     try {
-      const directive = JSON.parse(renderDirectiveMessage.content);
-      if (directive.componentName === "INGESTION_REVIEW") {
+      const directive =
+        typeof renderDirectiveMessage.content === "string"
+          ? JSON.parse(renderDirectiveMessage.content)
+          : renderDirectiveMessage.content;
+      if (directive?.componentName === "INGESTION_REVIEW") {
         content = {
           type: "INGESTION_REVIEW",
           reviewId: directive.props?.reviewId,
           label: "Ingestion Review",
+          initialPayload: directive.props?.initialPayload,
         };
       }
     } catch {
@@ -89,7 +93,10 @@ export function ArtifactColumnContainer({
       onToggleMobile={handleToggleMobile}
     >
       {content?.type === "INGESTION_REVIEW" && content.reviewId && (
-        <UniversalReviewComponent reviewId={content.reviewId} />
+        <UniversalReviewComponent
+          reviewId={content.reviewId}
+          initialPayload={content.initialPayload}
+        />
       )}
 
       {content?.type === "REVENUE_CHART" && (

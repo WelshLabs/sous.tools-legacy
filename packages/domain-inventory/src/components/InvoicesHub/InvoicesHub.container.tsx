@@ -1,13 +1,67 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
-import { InvoicesHubView } from "./InvoicesHub.view";
+import { graphqlClient } from "@soustools/api-client";
+import { InvoicesHubView, type InvoiceSummary } from "./InvoicesHub.view";
+
+const GET_INVOICES_QUERY = `
+  query GetInvoices {
+    invoices {
+      id
+      organization_id
+      vendor_id
+      vendor_name
+      invoice_number
+      total_amount
+      invoice_date
+      created_at
+      items {
+        id
+        raw_name
+        quantity
+        unit_price
+      }
+    }
+  }
+`;
 
 export function InvoicesHubContainer() {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [invoices, setInvoices] = useState<InvoiceSummary[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+
+  const fetchInvoices = async () => {
+    try {
+      setIsLoading(true);
+      const res = await graphqlClient.request<{ invoices: any[] }>(
+        GET_INVOICES_QUERY,
+      );
+      if (res.data?.invoices) {
+        setInvoices(
+          res.data.invoices.map((inv: any) => ({
+            id: inv.id,
+            invoiceNumber: inv.invoice_number,
+            vendorName: inv.vendor_name || "Unknown Vendor",
+            invoiceDate: inv.invoice_date,
+            totalAmount: Number(inv.total_amount) || 0,
+            itemCount: inv.items?.length || 0,
+            createdAt: inv.created_at,
+          })),
+        );
+      }
+    } catch (err) {
+      console.error("Failed to fetch invoices:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchInvoices();
+  }, []);
 
   const handleImportSelect = (type: "upload" | "camera" | "drive") => {
     if (type === "upload") {
@@ -72,6 +126,9 @@ export function InvoicesHubContainer() {
       cameraInputRef={cameraInputRef}
       processFile={processFile}
       isSubmitting={isSubmitting}
+      invoices={invoices}
+      isLoading={isLoading}
+      onRefresh={fetchInvoices}
     />
   );
 }

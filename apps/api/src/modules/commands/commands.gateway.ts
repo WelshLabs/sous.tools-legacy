@@ -47,7 +47,7 @@ export class CommandsGateway {
   /**
    * Broadcast real-time ingestion events to connected WebSocket clients
    */
-  emitIngestionUpdate(payload: {
+  async emitIngestionUpdate(payload: {
     reviewId: string;
     conversationId?: string;
     parsedData?: any;
@@ -72,30 +72,31 @@ export class CommandsGateway {
             content: payload.message,
             timestamp: new Date(),
           };
+
+          // Persist before emitting to ensure client refresh can load the
+          // render_component message and associated UI payload.
+          try {
+            await this.chatPersistence.appendMessage(
+              payload.conversationId,
+              payload.orgId || "",
+              payload.userId,
+              msg,
+            );
+          } catch (e) {
+            this.logger.warn("Failed to persist render_component", e);
+          }
+
+          // Emit to connected sockets and publish trajectory after persistence.
           this.server
             .to(`conversation-${payload.conversationId}`)
             .emit("chat_message", msg);
           this.commandsService
-            .emitTrajectoryMessage(
-              payload.conversationId,
-              payload.orgId || "",
-              msg,
-            )
+            .emitTrajectoryMessage(payload.conversationId, payload.orgId || "", msg)
             .catch((e) =>
               this.logger.warn(
                 "Failed to publish trajectory message to Redis",
                 e,
               ),
-            );
-          this.chatPersistence
-            .appendMessage(
-              payload.conversationId,
-              payload.orgId || "",
-              payload.userId,
-              msg,
-            )
-            .catch((e) =>
-              this.logger.warn("Failed to persist render_component", e),
             );
         }
       } else {

@@ -1,9 +1,27 @@
 /* eslint-disable max-lines */
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
-import { api } from "@soustools/api-client";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { graphqlClient } from "@soustools/api-client";
 import { Search, Plus, Loader2, X, ChevronDown, Check } from "lucide-react";
+
+const CREATE_ITEM_MUTATION = `
+  mutation CreateItem($input: CreateItemInputGQL!) {
+    createItem(input: $input) {
+      id
+      organization_id
+      name
+      category
+      purchase_unit
+    }
+  }
+`;
+
+const SEARCH_USDA_QUERY = `
+  query SearchUSDA($query: String!) {
+    usdaSearch(query: $query)
+  }
+`;
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -46,6 +64,15 @@ interface IngredientComboboxProps {
   onCreateNew: (name: string) => Promise<void>;
 }
 
+const SEARCH_ITEMS_QUERY = `
+  query SearchItems($search: String) {
+    items(search: $search) {
+      id
+      name
+    }
+  }
+`;
+
 function IngredientCombobox({
   matches,
   value,
@@ -55,15 +82,64 @@ function IngredientCombobox({
 }: IngredientComboboxProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [dbMatches, setDbMatches] = useState<TenantMatch[]>([]);
+  const [searching, setSearching] = useState(false);
   const [creating, setCreating] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const selectedName = matches.find((m) => m.id === value)?.name;
+  // Combine initial matches with database matches, deduplicating by ID
+  const allMatches = useMemo<TenantMatch[]>(() => {
+    const map = new Map<string, TenantMatch>();
+    (matches || []).forEach((m) => {
+      if (m && m.id) map.set(m.id, m);
+    });
+    (dbMatches || []).forEach((m) => {
+      if (m && m.id) map.set(m.id, m);
+    });
+    return Array.from(map.values());
+  }, [matches, dbMatches]);
+
+  const selectedName = (allMatches || []).find(
+    (m) => m && m.id === value,
+  )?.name;
 
   const filtered = query.trim()
-    ? matches.filter((m) => m.name.toLowerCase().includes(query.toLowerCase()))
-    : matches;
+    ? allMatches.filter((m) =>
+        m.name.toLowerCase().includes(query.toLowerCase()),
+      )
+    : allMatches;
+
+  useEffect(() => {
+    if (!open) return;
+    let isCancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        setSearching(true);
+        const res = await graphqlClient.request<{ items: any[] }>(
+          SEARCH_ITEMS_QUERY,
+          { search: query.trim() || undefined },
+        );
+        if (!isCancelled && res.data?.items) {
+          setDbMatches(
+            res.data.items.map((i: any) => ({
+              id: i.id,
+              name: i.name,
+            })),
+          );
+        }
+      } catch (err) {
+        console.error("Failed to query items:", err);
+      } finally {
+        if (!isCancelled) setSearching(false);
+      }
+    }, 200);
+
+    return () => {
+      isCancelled = true;
+      clearTimeout(timer);
+    };
+  }, [open, query]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -151,8 +227,11 @@ function IngredientCombobox({
               <button
                 type="button"
                 onClick={() => {
-                  const match = matches.find(
-                    (m) => m.name.toLowerCase() === guessName.toLowerCase(),
+                  const match = (matches || []).find(
+                    (m) =>
+                      m &&
+                      m.name &&
+                      m.name.toLowerCase() === guessName.toLowerCase(),
                   );
                   if (match) {
                     handleSelect(match.id);
@@ -194,9 +273,16 @@ function IngredientCombobox({
               </li>
             ))}
 
-            {filtered.length === 0 && !query && (
+            {searching && (
+              <li className="flex items-center justify-center gap-2 px-3 py-2 text-xs text-zinc-400">
+                <Loader2 className="h-3 w-3 animate-spin text-cyan-400" />
+                <span>Searching items...</span>
+              </li>
+            )}
+
+            {filtered.length === 0 && !searching && (
               <li className="px-3 py-3 text-center text-xs text-zinc-500 italic">
-                No matching ingredients
+                {query.trim() ? "No matching ingredients in database" : "No ingredients available"}
               </li>
             )}
 
@@ -247,15 +333,17 @@ function UsdaCombobox({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
-  const [localMatches, setLocalMatches] = useState<UsdaMatch[]>(matches);
+  const [localMatches, setLocalMatches] = useState<UsdaMatch[]>(
+    () => matches || [],
+  );
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setLocalMatches(matches);
+    setLocalMatches(matches || []);
   }, [matches]);
 
-  const selectedMatch = localMatches.find((m) => m.fdcId === value);
+  const selectedMatch = (localMatches || []).find((m) => m && m.fdcId === value);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -278,39 +366,29 @@ function UsdaCombobox({
       if (!q) return;
       setSearching(true);
       try {
+        const res = await graphqlClient.request<{ usdaSearch: any }>(
+          SEARCH_USDA_QUERY,
+          { query: q },
+        );
         let results: UsdaMatch[] = [];
-        try {
-          const res = await (api.GET as any)("/recipes/usda/search", {
-            params: { query: { query: q } },
-          });
-          if (res.data?.matches && Array.isArray(res.data.matches)) {
-            results = res.data.matches;
-          } else if (res.data?.data) {
-            results = [
-              {
-                fdcId: res.data.data.fdcId || res.data.data.fdc_id || 0,
-                description:
-                  res.data.data.description || res.data.data.fdc_food_name || q,
-              },
-            ];
-          }
-        } catch {
-          const res2 = await (api.GET as any)("/nutrition/usda/search", {
-            params: { query: { query: q } },
-          });
-          if (res2.data?.matches && Array.isArray(res2.data.matches)) {
-            results = res2.data.matches;
-          } else if (res2.data?.data) {
-            results = [
-              {
-                fdcId: res2.data.data.fdcId || res2.data.data.fdc_id || 0,
-                description:
-                  res2.data.data.description ||
-                  res2.data.data.fdc_food_name ||
-                  q,
-              },
-            ];
-          }
+        if (Array.isArray(res.data?.usdaSearch)) {
+          results = res.data.usdaSearch.map((item: any) => ({
+            fdcId: Number(item.fdcId || item.fdc_id || 0),
+            description: String(
+              item.description || item.fdc_food_name || q,
+            ),
+            score: typeof item.score === "number" ? item.score : undefined,
+          }));
+        } else if (res.data?.usdaSearch) {
+          const single = res.data.usdaSearch;
+          results = [
+            {
+              fdcId: Number(single.fdcId || single.fdc_id || 0),
+              description: String(
+                single.description || single.fdc_food_name || q,
+              ),
+            },
+          ];
         }
 
         if (results.length > 0) {
@@ -515,10 +593,11 @@ export function IngredientMappingRow({
 
   const handleCreateIngredient = async (name: string) => {
     try {
-      const res = await (api.POST as any)("/items", {
-        body: { name },
-      });
-      const createdItem = res.data?.data || res.data;
+      const res = await graphqlClient.request<{ createItem: any }>(
+        CREATE_ITEM_MUTATION,
+        { input: { name } },
+      );
+      const createdItem = res.data?.createItem;
       if (createdItem && createdItem.id) {
         const newItem: TenantMatch = {
           id: createdItem.id,
@@ -528,7 +607,7 @@ export function IngredientMappingRow({
         handleTenantChange(createdItem.id);
       }
     } catch (err) {
-      console.error("Failed to create new item:", err);
+      console.error("Failed to create new item via GraphQL:", err);
       const fallbackId = `custom-${Date.now()}`;
       const newItem: TenantMatch = { id: fallbackId, name };
       setLocalTenantMatches((prev) => [...prev, newItem]);

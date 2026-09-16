@@ -43,20 +43,20 @@ export class VendorsService {
 
   async create(
     orgId: string,
-    dto: CreateVendorDto,
+    dto: any,
   ): Promise<Record<string, unknown>> {
+    const payload: Record<string, unknown> = {
+      organization_id: orgId,
+      name: dto.name,
+      order_days: dto.order_days || dto.delivery_days || [],
+      order_method: dto.order_method || "MANUAL",
+      email: dto.email || dto.rep_email || null,
+      phone: dto.phone || dto.rep_phone || null,
+      sales_rep: dto.sales_rep || dto.rep_name || null,
+    };
     const { data, error } = await supabase
       .from("vendors")
-      .insert([
-        {
-          organization_id: orgId,
-          name: dto.name,
-          order_days: dto.order_days || [],
-          order_method: dto.order_method || null,
-          email: dto.email || null,
-          phone: dto.phone || null,
-        },
-      ])
+      .insert([payload])
       .select()
       .single();
 
@@ -68,13 +68,30 @@ export class VendorsService {
 
   async update(
     id: string,
-    dto: UpdateVendorDto,
+    dto: any,
   ): Promise<Record<string, unknown>> {
+    const payload: Record<string, unknown> = {};
+    if (dto.name !== undefined) payload.name = dto.name;
+    if (dto.order_method !== undefined) payload.order_method = dto.order_method;
+    if (dto.email !== undefined || dto.rep_email !== undefined) {
+      payload.email = dto.email !== undefined ? dto.email : dto.rep_email;
+    }
+    if (dto.phone !== undefined || dto.rep_phone !== undefined) {
+      payload.phone = dto.phone !== undefined ? dto.phone : dto.rep_phone;
+    }
+    if (dto.sales_rep !== undefined || dto.rep_name !== undefined) {
+      payload.sales_rep =
+        dto.sales_rep !== undefined ? dto.sales_rep : dto.rep_name;
+    }
+    if (dto.order_days !== undefined || dto.delivery_days !== undefined) {
+      payload.order_days =
+        dto.order_days !== undefined ? dto.order_days : dto.delivery_days;
+    }
+    payload.updated_at = new Date().toISOString();
+
     const { data, error } = await supabase
       .from("vendors")
-      .update({
-        ...dto,
-      })
+      .update(payload)
       .eq("id", id)
       .select()
       .single();

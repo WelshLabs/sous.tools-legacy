@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import type { Vendor } from "@soustools/api-types";
 import { toast } from "sonner";
+import { graphqlClient } from "@soustools/api-client";
 import { VendorsPanelView } from "./VendorsPanel.view";
 
 export interface VendorsPanelProps {
@@ -42,18 +43,82 @@ export function VendorsPanel({
       await customOnSave(id, editForm);
     } else {
       try {
-        const res = await fetch(`/api/vendors/${id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(editForm),
-        });
-        if (res.ok) {
-          setLocalVendors((prev) =>
-            prev.map((v) => (v.id === id ? { ...v, ...editForm } : v)),
+        if (id === "new") {
+          const res = await graphqlClient.request<{ createVendor: any }>(
+            `
+              mutation CreateVendor($input: CreateVendorInputGQL!) {
+                createVendor(input: $input) {
+                  id
+                  name
+                  order_method
+                  rep_email
+                  rep_phone
+                  delivery_days
+                }
+              }
+            `,
+            {
+              input: {
+                name: editForm.name,
+                order_method: editForm.order_method || "MANUAL",
+                rep_email: editForm.email,
+                rep_phone: editForm.phone,
+                delivery_days: editForm.order_days,
+              },
+            },
           );
-          toast.success("Vendor updated successfully");
+          if (res.data?.createVendor) {
+            const newV = res.data.createVendor;
+            setLocalVendors((prev) => [
+              ...prev,
+              {
+                id: newV.id,
+                organization_id: "",
+                name: newV.name,
+                order_method: newV.order_method || "MANUAL",
+                email: newV.rep_email || "",
+                phone: newV.rep_phone || "",
+                order_days: newV.delivery_days || [],
+                created_at: new Date().toISOString(),
+              },
+            ]);
+            toast.success("Vendor created successfully");
+          } else {
+            toast.error("Failed to create vendor");
+          }
         } else {
-          toast.error("Failed to update vendor");
+          const res = await graphqlClient.request<{ updateVendor: any }>(
+            `
+              mutation UpdateVendor($id: String!, $input: UpdateVendorInputGQL!) {
+                updateVendor(id: $id, input: $input) {
+                  id
+                  name
+                  order_method
+                  rep_email
+                  rep_phone
+                  delivery_days
+                }
+              }
+            `,
+            {
+              id,
+              input: {
+                name: editForm.name,
+                order_method: editForm.order_method,
+                rep_email: editForm.email,
+                rep_phone: editForm.phone,
+                delivery_days: editForm.order_days,
+              },
+            },
+          );
+          if (res.data?.updateVendor) {
+            setLocalVendors((prev) =>
+              prev.map((v) => (v.id === id ? { ...v, ...editForm } : v)),
+            );
+            toast.success("Vendor updated successfully");
+          } else {
+            toast.error("Failed to update vendor");
+          }
         }
       } catch (err: any) {
         toast.error(err.message || "Network error");
