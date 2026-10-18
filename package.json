@@ -55,7 +55,7 @@
     "prettier": "^3.9.5",
     "prettier-plugin-tailwindcss": "^0.8.1",
     "repomix": "^1.16.1",
-    "sharp": "^0.35.3",
+    "sharp": "^0.35.5",
     "ts-node": "^10.9.2",
     "tsx": "^4.23.12",
     "turbo": "latest",
