@@ -41,16 +41,12 @@ RUN pip3 install aider-chat "cptr[all]" --break-system-packages
 # 7. Install uv (for uvx mcp-server-qdrant, uvx mcp-neo4j-cypher) — matches cptr
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# 8. Initialize terminal environment — identical config to cptr
-RUN mkdir -p /config && \
-    echo 'export STARSHIP_CONFIG=/home/conar/code/sous.tools/.config/terminal/starship.toml' >> /config/.zshrc && \
-    echo 'eval "$(starship init zsh)"' >> /config/.zshrc && \
-    echo 'if [ -f /home/conar/code/sous.tools/.config/terminal/.zsh_aliases ]; then source /home/conar/code/sous.tools/.config/terminal/.zsh_aliases; fi' >> /config/.zshrc && \
-    echo 'export PATH="$HOME/.local/bin:$PATH"' >> /config/.zshrc
+# 8. Install chezmoi (for shared dotfiles across WSL, code-server, cptr)
+RUN sh -c "$(curl -fsLS https://get.chezmoi.io)" -- -b /usr/local/bin
 
-# 9. Symlink AGY MCP config to repo SSOT (auto-sync on every container start)
-RUN mkdir -p /config/.gemini/config && \
-    ln -sf /home/conar/code/sous.tools/mcp_config.json /config/.gemini/config/mcp_config.json
+# 9. Configure default terminal to zsh
+RUN mkdir -p /config/data/User && \
+    echo '{"terminal.integrated.defaultProfile.linux": "zsh"}' > /config/data/User/settings.json
 
 # 10. Configure permissions and shell (linuxserver s6-overlay processes PUID at runtime)
 RUN chown -R abc:abc /config && usermod -s /bin/zsh abc

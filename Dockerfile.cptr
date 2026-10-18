@@ -76,14 +76,8 @@ ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 # 10. Install uv as user (for the Qdrant MCP Server and uvx tools)
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# 11. Configure Zsh with Starship + shared aliases + shared starship config + AGY MCP symlink
-RUN mkdir -p ~/.gemini/config && \
-    ln -sf /home/conar/code/sous.tools/mcp_config.json ~/.gemini/config/mcp_config.json && \
-    echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && \
-    echo 'export SHELL=/bin/zsh' >> ~/.zshrc && \
-    echo 'export STARSHIP_CONFIG=/home/conar/code/sous.tools/.config/terminal/starship.toml' >> ~/.zshrc && \
-    echo 'eval "$(starship init zsh)"' >> ~/.zshrc && \
-    echo 'if [ -f /home/conar/code/sous.tools/.config/terminal/.zsh_aliases ]; then source /home/conar/code/sous.tools/.config/terminal/.zsh_aliases; fi' >> ~/.zshrc
+# 11. Install chezmoi
+RUN sh -c "$(curl -fsLS https://get.chezmoi.io)" -- -b ~/.local/bin
 
 WORKDIR /home/conar/code/sous.tools
 EXPOSE 8000

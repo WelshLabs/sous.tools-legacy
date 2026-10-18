@@ -3,6 +3,8 @@ module.exports = {
     {
       name: "api",
       script: "pnpm",
+      interpreter: "none",
+      
       args: "run --filter api dev",
       env: {
         NODE_ENV: "development",
@@ -17,6 +19,8 @@ module.exports = {
     {
       name: "web",
       script: "pnpm",
+      interpreter: "none",
+      
       args: "run --filter web dev",
       env: {
         NODE_ENV: "development",
@@ -30,6 +34,8 @@ module.exports = {
     {
       name: "setup-portal",
       script: "pnpm",
+      interpreter: "none",
+      
       args: "run --filter @soustools/setup-portal dev",
       env: {
         NODE_ENV: "development",
